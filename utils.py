@@ -11,8 +11,7 @@ from torch.optim import SGD, Adam
 from tensorboardX import SummaryWriter
 
 
-class Averager():
-
+class Averager:
     def __init__(self):
         self.n = 0.0
         self.v = 0.0
@@ -25,8 +24,7 @@ class Averager():
         return self.v
 
 
-class Timer():
-
+class Timer:
     def __init__(self):
         self.v = time.time()
 
@@ -39,11 +37,11 @@ class Timer():
 
 def time_text(t):
     if t >= 3600:
-        return '{:.1f}h'.format(t / 3600)
+        return "{:.1f}h".format(t / 3600)
     elif t >= 60:
-        return '{:.1f}m'.format(t / 60)
+        return "{:.1f}m".format(t / 60)
     else:
-        return '{:.1f}s'.format(t)
+        return "{:.1f}s".format(t)
 
 
 _log_path = None
@@ -54,18 +52,20 @@ def set_log_path(path):
     _log_path = path
 
 
-def log(obj, filename='log.txt'):
+def log(obj, filename="log.txt"):
     print(obj)
     if _log_path is not None:
-        with open(os.path.join(_log_path, filename), 'a') as f:
+        with open(os.path.join(_log_path, filename), "a") as f:
             print(obj, file=f)
 
 
 def ensure_path(path, remove=True):
-    basename = os.path.basename(path.rstrip('/'))
+    basename = os.path.basename(path.rstrip("/"))
     if os.path.exists(path):
-        if remove and (basename.startswith('_')
-                or input('{} exists, remove? (y/[n]): '.format(path)) == 'y'):
+        if remove and (
+            basename.startswith("_")
+            or input("{} exists, remove? (y/[n]): ".format(path)) == "y"
+        ):
             shutil.rmtree(path)
             os.makedirs(path)
     else:
@@ -75,7 +75,7 @@ def ensure_path(path, remove=True):
 def set_save_path(save_path, remove=True):
     ensure_path(save_path, remove=remove)
     set_log_path(save_path)
-    writer = SummaryWriter(os.path.join(save_path, 'tensorboard'))
+    writer = SummaryWriter(os.path.join(save_path, "tensorboard"))
     return log, writer
 
 
@@ -83,27 +83,23 @@ def compute_num_params(model, text=False):
     tot = int(sum([np.prod(p.shape) for p in model.parameters()]))
     if text:
         if tot >= 1e6:
-            return '{:.1f}M'.format(tot / 1e6)
+            return "{:.1f}M".format(tot / 1e6)
         else:
-            return '{:.1f}K'.format(tot / 1e3)
+            return "{:.1f}K".format(tot / 1e3)
     else:
         return tot
 
 
 def make_optimizer(param_list, optimizer_spec, load_sd=False):
-    Optimizer = {
-        'sgd': SGD,
-        'adam': Adam
-    }[optimizer_spec['name']]
-    optimizer = Optimizer(param_list, **optimizer_spec['args'])
+    Optimizer = {"sgd": SGD, "adam": Adam}[optimizer_spec["name"]]
+    optimizer = Optimizer(param_list, **optimizer_spec["args"])
     if load_sd:
-        optimizer.load_state_dict(optimizer_spec['sd'])
+        optimizer.load_state_dict(optimizer_spec["sd"])
     return optimizer
 
 
 def make_coord(shape, ranges=None, flatten=True):
-    """ Make coordinates at grid centers.
-    """
+    """Make coordinates at grid centers."""
     coord_seqs = []
     for i, n in enumerate(shape):
         if ranges is None:
@@ -120,8 +116,8 @@ def make_coord(shape, ranges=None, flatten=True):
 
 
 def to_pixel_samples(img):
-    """ Convert the image to coord-RGB pairs.
-        img: Tensor, (3, H, W)
+    """Convert the image to coord-RGB pairs.
+    img: Tensor, (3, H, W)
     """
     coord = make_coord(img.shape[-2:])
     rgb = img.view(3, -1).permute(1, 0)
@@ -131,13 +127,13 @@ def to_pixel_samples(img):
 def calc_psnr(sr, hr, dataset=None, scale=1, rgb_range=1):
     diff = (sr - hr) / rgb_range
     if dataset is not None:
-        if dataset == 'benchmark':
+        if dataset == "benchmark":
             shave = scale
             if diff.size(1) > 1:
                 gray_coeffs = [65.738, 129.057, 25.064]
                 convert = diff.new_tensor(gray_coeffs).view(1, 3, 1, 1) / 256
                 diff = diff.mul(convert).sum(dim=1)
-        elif dataset == 'div2k':
+        elif dataset == "div2k":
             shave = scale + 6
         else:
             raise NotImplementedError
