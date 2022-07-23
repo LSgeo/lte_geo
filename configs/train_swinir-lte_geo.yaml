@@ -1,38 +1,44 @@
+dataset_grid_param:
+  load_magnetics: True
+  load_gravity: False
+  load_geology: False
+
 train_dataset:
   dataset:
     name: noddyverse_dataset
     args:
       root_path: D:/luke/Noddy_data/noddyverse_train_data
       repeat: 20
-      cache: in_memory
+      limit_length: 800
+      hr_line_spacing: 4
+      sample_spacing: 20
+      heading: NS
   wrapper:
     name: noddyverse_wrapper
     args:
-      inp_size: 48
-      scale_max: 4
-      augment: true
-      sample_q: 2304
-  batch_size: 32
+      inp_size: 24
+      scale_max: 4 #TODO 5 or higher scale
+  batch_size: 8
 
 val_dataset:
   dataset:
     name: noddyverse_dataset
     args:
+      repeat: 1
       root_path: D:/luke/Noddy_data/noddyverse_val_data
-      first_k: 10
-      repeat: 160
-      cache: in_memory
+      hr_line_spacing: 5
+      sample_spacing: 20
+      heading: NS
   wrapper:
     name: noddyverse_wrapper
     args:
-      inp_size: 48
+      inp_size: 24
       scale_max: 4
-      sample_q: 2304
-  batch_size: 32
+  batch_size: 8
 
 data_norm:
-  inp: {sub: [0.5], div: [0.5]}
-  gt: {sub: [0.5], div: [0.5]}
+  inp: {sub: [0], div: [1]}
+  gt: {sub: [0], div: [1]}
 
 model:
   name: lte
@@ -41,10 +47,11 @@ model:
       name: swinir
       args:
         no_upsampling: true
+        in_chans: 1
     imnet_spec:
       name: mlp
       args:
-        out_dim: 3
+        out_dim: 1
         hidden_list: [256, 256, 256]
     hidden_dim: 256
 

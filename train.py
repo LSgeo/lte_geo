@@ -85,7 +85,7 @@ def train(train_loader, model, optimizer, epoch):
     gt_sub = torch.FloatTensor(t["sub"]).view(1, 1, -1).cuda()
     gt_div = torch.FloatTensor(t["div"]).view(1, 1, -1).cuda()
 
-    num_dataset = 800  # DIV2K
+    num_dataset = config.get("train_dataset")["dataset"]["args"]["limit_length"]
     iter_per_epoch = int(
         num_dataset
         / config.get("train_dataset")["batch_size"]
@@ -101,7 +101,7 @@ def train(train_loader, model, optimizer, epoch):
 
         gt = (batch["gt"] - gt_sub) / gt_div
         loss = loss_fn(pred, gt)
-        psnr = metric_fn(pred, gt)
+        psnr = metric_fn(pred, gt, rgb_range=config.get("rgb_range"))
 
         # tensorboard
         writer.add_scalars(
@@ -210,7 +210,9 @@ def main(config_, save_path):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config")
+    parser.add_argument(
+        "--config", default="D:/luke/lte_geo/configs/train_swinir-lte_geo.yaml"
+    )
     parser.add_argument("--name", default=None)
     parser.add_argument("--tag", default=None)
     parser.add_argument("--gpu", default="0")

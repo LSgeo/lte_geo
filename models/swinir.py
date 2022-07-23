@@ -1077,5 +1077,5 @@ class SwinIR(nn.Module):
 
 
 @register("swinir")
-def make_swinir(no_upsampling=True):
-    return SwinIR()
+def make_swinir(**kwargs):
+    return SwinIR(**kwargs)
