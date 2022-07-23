@@ -31,7 +31,8 @@ def make_data_loader(spec, tag=""):
         dataset,
         batch_size=spec["batch_size"],
         shuffle=(tag == "train"),
-        num_workers=8,
+        num_workers=config.get("num_workers"),
+        persistent_workers=bool(config.get("num_workers")),
         pin_memory=True,
     )
     return loader
@@ -44,10 +45,12 @@ def make_data_loaders():
 
 
 def prepare_training():
-    #     if config.get('resume') is not None:
-    if os.path.exists(config.get("resume")):
+    if config.get("resume") is not None:
+        # if os.path.exists(config.get("resume")):
         sv_file = torch.load(config["resume"])
-        model = models.make(sv_file["model"], load_sd=True).cuda()
+        model = models.make(sv_file["model"], load_sd=True).to(
+            "cuda", non_blocking=True
+        )
         optimizer = utils.make_optimizer(
             model.parameters(), sv_file["optimizer"], load_sd=True
         )
@@ -59,7 +62,7 @@ def prepare_training():
         for _ in range(epoch_start - 1):
             lr_scheduler.step()
     else:
-        model = models.make(config["model"]).cuda()
+        model = models.make(config["model"]).to("cuda", non_blocking=True)
         optimizer = utils.make_optimizer(model.parameters(), config["optimizer"])
         epoch_start = 1
         if config.get("multi_step_lr") is None:
@@ -79,11 +82,15 @@ def train(train_loader, model, optimizer, epoch):
 
     data_norm = config["data_norm"]
     t = data_norm["inp"]
-    inp_sub = torch.FloatTensor(t["sub"]).view(1, -1, 1, 1).cuda()
-    inp_div = torch.FloatTensor(t["div"]).view(1, -1, 1, 1).cuda()
+    inp_sub = (
+        torch.FloatTensor(t["sub"]).view(1, -1, 1, 1).to("cuda", non_blocking=True)
+    )
+    inp_div = (
+        torch.FloatTensor(t["div"]).view(1, -1, 1, 1).to("cuda", non_blocking=True)
+    )
     t = data_norm["gt"]
-    gt_sub = torch.FloatTensor(t["sub"]).view(1, 1, -1).cuda()
-    gt_div = torch.FloatTensor(t["div"]).view(1, 1, -1).cuda()
+    gt_sub = torch.FloatTensor(t["sub"]).view(1, 1, -1).to("cuda", non_blocking=True)
+    gt_div = torch.FloatTensor(t["div"]).view(1, 1, -1).to("cuda", non_blocking=True)
 
     num_dataset = config.get("train_dataset")["dataset"]["args"]["limit_length"]
     iter_per_epoch = int(
@@ -94,7 +101,7 @@ def train(train_loader, model, optimizer, epoch):
     iteration = 0
     for batch in tqdm(train_loader, leave=False, desc="train"):
         for k, v in batch.items():
-            batch[k] = v.cuda()
+            batch[k] = v.to("cuda", non_blocking=True)
 
         inp = (batch["inp"] - inp_sub) / inp_div
         pred = model(inp, batch["coord"], batch["cell"])

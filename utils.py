@@ -1,5 +1,5 @@
 # modified from: https://github.com/yinboc/liif
-
+from datetime import datetime
 import os
 import time
 import shutil
@@ -75,7 +75,9 @@ def ensure_path(path, remove=True):
 def set_save_path(save_path, remove=True):
     ensure_path(save_path, remove=remove)
     set_log_path(save_path)
-    writer = SummaryWriter(os.path.join(save_path, "tensorboard"))
+    writer = SummaryWriter(
+        os.path.join(save_path, f'tensorboard/{datetime.now().strftime("%y%m%d-%H%M")}')
+    )
     return log, writer
 
 
@@ -109,7 +111,7 @@ def make_coord(shape, ranges=None, flatten=True):
         r = (v1 - v0) / (2 * n)
         seq = v0 + r + (2 * r) * torch.arange(n).float()
         coord_seqs.append(seq)
-    ret = torch.stack(torch.meshgrid(*coord_seqs), dim=-1)
+    ret = torch.stack(torch.meshgrid(*coord_seqs, indexing="ij"), dim=-1)
     if flatten:
         ret = ret.view(-1, ret.shape[-1])
     return ret

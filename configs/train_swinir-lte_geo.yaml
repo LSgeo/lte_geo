@@ -59,12 +59,16 @@ optimizer:
   name: adam
   args:
     lr: 2.e-4
-epoch_max: 1000
+epoch_max: 50
 multi_step_lr:
-  milestones: [500, 800, 900, 950]
+  milestones: [10, 20, 30, 40]
   gamma: 0.5
 
 epoch_val: 1
-epoch_save: 100
+epoch_save: 26
 
-resume: ./save/_train_swinir-lte/epoch-last.pth
+num_workers: 8
+rgb_range: 2 #noddyverse min max clip +-5000
+
+# resume: ./save/_train_swinir-lte/epoch-last.pth
+## train.py#49 - change resume logic
