@@ -12,6 +12,10 @@ import datasets
 import models
 import utils
 
+import matplotlib.pyplot as plt
+from pathlib import Path
+import colorcet as cc
+
 
 def batched_predict(model, inp, coord, cell, bsize):
     with torch.no_grad():
@@ -28,6 +32,34 @@ def batched_predict(model, inp, coord, cell, bsize):
     return pred
 
 
+def save_pred(lr, sr, hr, save_path="", suffix="", scale=None):
+    title = f"Magnetics_{scale}x_{suffix}.png"
+    Path(save_path).mkdir(parents=True, exist_ok=True)
+    lr = lr.detach().cpu().squeeze().numpy()
+    sr = sr.detach().cpu().squeeze().numpy()
+    hr = hr.detach().cpu().squeeze().numpy()
+
+    plt_args = dict(
+        vmin=hr.min(),
+        vmax=hr.max(),
+        cmap=cc.cm.CET_L1,
+        origin="lower",
+        interpolation="nearest",
+    )
+
+    fig, [axlr, axsr, axhr] = plt.subplots(1, 3, figsize=(12, 4))
+    plt.suptitle(title)
+    axlr.imshow(lr, **plt_args)
+    axsr.imshow(sr, **plt_args)
+    axhr.imshow(hr, **plt_args)
+    axlr.set_title("LR")
+    axsr.set_title("SR")
+    axhr.set_title("HR")
+    # plt.colorbar()
+    plt.savefig(Path(save_path) / title)
+    plt.close()
+
+
 def eval_psnr(
     loader,
     model,
@@ -38,6 +70,8 @@ def eval_psnr(
     scale_max=4,
     fast=False,
     verbose=False,
+    rgb_range=1,
+    model_name="",
 ):
     model.eval()
 
@@ -58,13 +92,21 @@ def eval_psnr(
     elif eval_type.startswith("benchmark"):
         scale = int(eval_type.split("-")[1])
         metric_fn = partial(utils.calc_psnr, dataset="benchmark", scale=scale)
+    elif eval_type.startswith("noddy"):
+        scale = int(eval_type.split("-")[1])
+        metric_fn = partial(
+            utils.calc_psnr,
+            dataset="noddyverse",
+            scale=scale,
+            rgb_range=rgb_range,
+        )
     else:
         raise NotImplementedError
 
     val_res = utils.Averager()
 
-    pbar = tqdm(loader, leave=False, desc="val")
-    for batch in pbar:
+    pbar = tqdm(loader, leave=False, desc="test")
+    for i, batch in enumerate(pbar):
         for k, v in batch.items():
             batch[k] = v.cuda()
 
@@ -110,30 +152,39 @@ def eval_psnr(
             # gt reshape
             ih, iw = batch["inp"].shape[-2:]
             s = math.sqrt(batch["coord"].shape[1] / (ih * iw))
-            shape = [batch["inp"].shape[0], round(ih * s), round(iw * s), 3]
+            shape = [batch["inp"].shape[0], round(ih * s), round(iw * s), 1]
             batch["gt"] = batch["gt"].view(*shape).permute(0, 3, 1, 2).contiguous()
 
             # prediction reshape
             ih += h_pad
             iw += w_pad
             s = math.sqrt(coord.shape[1] / (ih * iw))
-            shape = [batch["inp"].shape[0], round(ih * s), round(iw * s), 3]
+            shape = [batch["inp"].shape[0], round(ih * s), round(iw * s), 1]
             pred = pred.view(*shape).permute(0, 3, 1, 2).contiguous()
             pred = pred[..., : batch["gt"].shape[-2], : batch["gt"].shape[-1]]
+
+            save_pred(
+                lr=batch["inp"],
+                sr=pred,
+                hr=batch["gt"],
+                save_path=f"{model_name}",
+                suffix=i,
+                scale=scale,
+            )
 
         res = metric_fn(pred, batch["gt"])
         val_res.add(res.item(), inp.shape[0])
 
         if verbose:
-            pbar.set_description("val {:.4f}".format(val_res.item()))
+            pbar.set_description("PSNR test {:.4f}".format(val_res.item()))
 
     return val_res.item()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config")
-    parser.add_argument("--model")
+    parser.add_argument("--config", default="configs/test_swinir-lte_geo.yaml")
+    parser.add_argument("--model", default="save/_train_swinir-lte_geo/epoch-best.pth")
     parser.add_argument("--window", default="0")
     parser.add_argument("--scale_max", default="4")
     parser.add_argument("--fast", default=False)
@@ -149,11 +200,18 @@ if __name__ == "__main__":
     dataset = datasets.make(spec["dataset"])
     dataset = datasets.make(spec["wrapper"], args={"dataset": dataset})
     loader = DataLoader(
-        dataset, batch_size=spec["batch_size"], num_workers=8, pin_memory=True
+        dataset,
+        batch_size=spec["batch_size"],
+        num_workers=config.get("num_workers"),
+        persistent_workers=bool(config.get("num_workers")),
+        pin_memory=True,
     )
 
     model_spec = torch.load(args.model)["model"]
     model = models.make(model_spec, load_sd=True).cuda()
+
+    last_model = Path("D:/luke/lte_geo/save/_train_swinir-lte_geo/tensorboard")
+    last_model = sorted(list(last_model.iterdir()))[-1].stem
 
     res = eval_psnr(
         loader,
@@ -165,5 +223,7 @@ if __name__ == "__main__":
         scale_max=int(args.scale_max),
         fast=args.fast,
         verbose=True,
+        rgb_range=config.get("rgb_range"),
+        model_name=last_model,
     )
     print("result: {:.4f}".format(res))

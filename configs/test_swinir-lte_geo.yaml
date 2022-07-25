@@ -1,0 +1,25 @@
+test_dataset:
+  dataset:
+    name: noddyverse_dataset
+    args:
+      root_path: D:/luke/Noddy_data/noddyverse_test_data
+      hr_line_spacing: 4
+      sample_spacing: 20
+      heading: NS
+  wrapper:
+    name: noddyverse_wrapper
+    args:
+      inp_size: 24
+      scale_min: 2
+      scale_max: 4
+  batch_size: 1
+eval_type: noddyverse-4
+eval_bsize: 30000
+
+num_workers: 0
+rgb_range: 2 #noddyverse min max clip +-5000 to range [-1, 1]
+
+
+data_norm:
+  inp: {sub: [0], div: [1]}
+  gt: {sub: [0], div: [1]}

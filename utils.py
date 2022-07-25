@@ -138,7 +138,7 @@ def calc_psnr(sr, hr, dataset=None, scale=1, rgb_range=1):
         elif dataset == "div2k":
             shave = scale + 6
         elif dataset == "noddyverse":
-            shave = 0  # TODO figure out
+            shave = scale + 6  # TODO figure out
         else:
             raise NotImplementedError
         valid = diff[..., shave:-shave, shave:-shave]
