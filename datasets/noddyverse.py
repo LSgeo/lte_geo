@@ -143,3 +143,48 @@ class NoddyverseWrapper(Dataset):
             "cell": hr_cell,
             "gt": hr_val,
         }
+
+
+def load_naprstek_synthetic(
+    root="D:/luke/Noddy_data/test",
+    data_txt_file="Naprstek_BaseModel1-AllValues-1nTNoise.txt",
+):
+    """Parse synthetic data from Naprstek's GitHub.
+    Includes a plot function to mimic the presentation done in their paper.
+
+    ~Un~fortunately, I cannot mimic the exact rainbow stretch used
+    by Oasis Montaj.
+
+    Note the grid is 600x600, nominally 5 m cell size, for 3x3 km extent.
+    These data include 1 nT Gaussian noise.
+
+    https://doi.org/10.1190/geo2018-0156.1
+    https://github.com/TomasNaprstek/Naprstek-Smith-Interpolation/tree/master/StandAlone
+    """
+    from pathlib import Path
+    import colorcet as cc
+    import matplotlib.pyplot as plt
+
+    txt_file = next(Path(root).glob(data_txt_file))
+    grid = np.loadtxt(txt_file, skiprows=1, dtype=np.float32)
+
+    y = x = np.arange(start=2.5, stop=3000, step=5)
+    grid = np.rot90(grid[:, 2].reshape(600, 600, 1))
+
+    # fig, ax = plt.subplots(figsize=(10, 10))
+    # plt.title("Total field (nT)")
+    # plt.imshow(
+    #     grid,
+    #     origin="upper",
+    #     cmap=cc.cm.CET_R1,
+    #     extent=(x.min(), x.max(), y.min(), y.max()),
+    #     vmin=-20,
+    #     vmax=40,
+    # )
+    # plt.colorbar(location="top")
+    # plt.xlabel("Model x position (m)")
+    # plt.ylabel("Model y position (m)")
+    # ax.xaxis.set_major_locator(plt.MultipleLocator(250))
+    # plt.grid(which="both", axis="x", c='k')
+
+    return grid
