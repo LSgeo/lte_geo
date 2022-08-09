@@ -30,7 +30,7 @@ class HRLRNoddyverse(NoddyDataset):
         **kwargs,
     ):
         self.sp = {
-            "hr_line_spacing": kwargs.get("line_spacing", 1),
+            "hr_line_spacing": kwargs.get("hr_line_spacing", 1),
             "sample_spacing": kwargs.get("sample_spacing", 20),
             "heading": kwargs.get("heading", None),  # Default will be random
         }
@@ -45,7 +45,7 @@ class HRLRNoddyverse(NoddyDataset):
     def _subsample(self, raster, ls):
         """Select points from raster according to line spacing"""
         # input_cell_size = 20 # Noddyverse cell size is 20 m
-        ss = 1  # Sample all points along line
+        ss = 1  # Sample all (every 1) points along line
 
         xx, yy = np.meshgrid(
             np.arange(raster.shape[-1]),  # x, cols
@@ -58,33 +58,56 @@ class HRLRNoddyverse(NoddyDataset):
 
         return xx, yy, z
 
-    def _grid(self, x, y, z, scale, ls, cs_fac=4):
-        """Min Curvature grid xyz at scale, with 1/5 cell size to ls ratio"""
-        scale = 1
-        scale = 2
-        scale = 3
-        scale = 4
-
-        ls = 4
-        ls *= scale
-        w0 = s0 = 0  # Pixels to move in from boundary
-        d = 200  # Limit to non-NAN extent
-        # crop = int(self.inp_size // scale)
-
-        w, e, s, n = np.array([w0, w0 + d, s0, s0 + d], dtype=np.float32)
+    def _grid(self, x, y, z, scale, ls, lr_e, lr_n, cs_fac=4, d=180):
+        """Min Curvature grid xyz at scale, with ls/cs_fac cell size.
+        Params:
+            d: adjustable crop factor, but 180 is best for noddyverse. 200 Max.
+        """
+        w, e, s, n = np.array([0, d, 0, d], dtype=np.float32)
+        cs = ls / cs_fac  # Cell size is e.g. 1/4 line spacing
         gridder = vd.ScipyGridder("cubic")
-        gridder = gridder.fit((x, y), z)
+        gridder = gridder.fit(coordinates=(x, y), data=z)
         grid = gridder.grid(
             data_names="forward",
             coordinates=np.meshgrid(
-                np.arange(w, e, step=ls / cs_fac),
-                np.arange(s, n, step=ls / cs_fac),
+                np.arange(w, e, step=cs),
+                np.arange(s, n, step=cs),
             ),
         )
         grid = grid.get("forward").values.astype(np.float32)
+
+        if self.is_val:
+            pass
+        else:
+            grid = grid[
+                lr_e : scale * self.inp_size + lr_e,
+                lr_n : scale * self.inp_size + lr_n,
+            ]
+
+        # w_grd = self.inp_size * scale.item()
+
+        # w_lr = self.inp_size  # No matter what happens, lr is same size eg.48x48
+        # w_hr = self.inp_size * self.scale.item()  # HR is e.g. 480*480 (10x)
+        # # Max usable data is 720x720, which is around 15 times scale (cs_fac=4)
+        # w_grd = w_hr if scale == 1 else w_lr
+
+        # ##
+        # # We want to grid a region that gives d size.
+        # d = int(cs * self.inp_size)
+
+        # # w0 = s0 = 0  # Pixels to move in from boundary
+        # # d = 180  # Nice factors [1,10,] except 7 (and 8 if cs_fac==5).
+
+        # # # Currently grid full extent and crop. May be better to direct grid to size.
+        # # if scale == 1:
+        # #     grid = grid[x0:x0+w_hr, y0:y0+w_hr]
+        # # else:
+        # #     grid = grid[x0:x0+w_lr, y0:y0+w_lr]
+
+        # print(float(scale), grid.shape, np.isnan(grid).any())
         # grid = grid[:crop, :crop]
 
-        return np.expand_dims(grid, 0)  # re-add channel dimension
+        return np.expand_dims(grid, 0)  # add channel dimension
 
     def _process(self, index):
         super()._process(index)
@@ -113,21 +136,20 @@ class NoddyverseWrapper(Dataset):
         sample_q=None,
     ):
         self.dataset = dataset
-        self.inp_size = inp_size
         self.dataset.inp_size = inp_size
+        self.scale = 1
         self.scale_min = scale_min
         self.scale_max = scale_max or scale_min  # if not scale_max...
         self.augment = augment
-        self.sample_q = sample_q
+        self.sample_q = sample_q  # clip hr samples to same length
 
     def __len__(self):
         return len(self.dataset)
 
     def __getitem__(self, index):
-        scale = torch.randint(low=self.scale_min, high=self.scale_max + 1, size=(1,))
-        self.dataset.scale = scale
-
+        self.dataset.scale = int(self.scale)
         data = self.dataset[index]
+
         data["hr_grid"] = torch.from_numpy(data["hr_grid"]).to(torch.float32)
         data["lr_grid"] = torch.from_numpy(data["lr_grid"]).to(torch.float32)
         # data contains the hr and lr grids at their correct sizes.

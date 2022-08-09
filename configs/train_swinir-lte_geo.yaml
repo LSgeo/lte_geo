@@ -8,16 +8,17 @@ train_dataset:
     name: noddyverse_dataset
     args:
       root_path: D:/luke/Noddy_data/noddyverse_train_data
-      repeat: 20
-      limit_length: 800
-      hr_line_spacing: 4
+      repeat: 5
+      limit_length: 2500
+      hr_line_spacing: 1
       sample_spacing: 20
       heading: NS
   wrapper:
     name: noddyverse_wrapper
     args:
-      inp_size: 24
-      scale_max: 4 #TODO 5 or higher scale
+      inp_size: 48 # LR input size
+      scale_max: 4 #up to 10, hardcoded to exclude 7
+      # cs_fac: 4 # Hardcoded to 4. If you set to 5, exclude scale 8.
   batch_size: 8
 
 val_dataset:
@@ -26,13 +27,13 @@ val_dataset:
     args:
       repeat: 1
       root_path: D:/luke/Noddy_data/noddyverse_val_data
-      hr_line_spacing: 5
+      hr_line_spacing: 4
       sample_spacing: 20
       heading: NS
   wrapper:
     name: noddyverse_wrapper
     args:
-      inp_size: 24
+      inp_size: 48
       scale_max: 4
   batch_size: 8
 

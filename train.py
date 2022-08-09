@@ -13,7 +13,6 @@ from torch.optim.lr_scheduler import MultiStepLR
 import datasets
 import models
 import utils
-from test import eval_psnr
 
 
 def make_data_loader(spec, tag=""):
@@ -100,6 +99,20 @@ def train(train_loader, model, optimizer, epoch):
     )
     iteration = 0
     for batch in tqdm(train_loader, leave=False, desc="train"):
+        # Set scale for next batch
+        train_loader.dataset.scale = torch.randint(
+            low=train_loader.dataset.scale_min,
+            high=train_loader.dataset.scale_max + 1,
+            size=(1,),
+        )
+        while train_loader.dataset.scale == 7:  # or (self.scale == 8: # if cs_fac=5)
+            train_loader.dataset.scale = torch.randint(
+                low=train_loader.dataset.scale_min,
+                high=train_loader.dataset.scale_max + 1,
+                size=(1,),
+            )
+            print(f"set scale to {train_loader.dataset.scale} instead of 7")
+
         for k, v in batch.items():
             batch[k] = v.to("cuda", non_blocking=True)
 
@@ -132,6 +145,8 @@ def train(train_loader, model, optimizer, epoch):
 
 
 def main(config_, save_path):
+    from test import eval_psnr
+
     global config, log, writer
     config = config_
     log, writer = utils.set_save_path(save_path, remove=False)
