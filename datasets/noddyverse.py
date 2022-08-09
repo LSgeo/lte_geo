@@ -195,21 +195,21 @@ def load_naprstek_synthetic(
     by Oasis Montaj.
 
     Note the grid is 600x600, nominally 5 m cell size, for 3x3 km extent.
-    These data include 1 nT Gaussian noise.
+    These data include 1 nT Gaussian noise added to the forward model.
 
     https://doi.org/10.1190/geo2018-0156.1
     https://github.com/TomasNaprstek/Naprstek-Smith-Interpolation/tree/master/StandAlone
     """
     from pathlib import Path
-    import colorcet as cc
-    import matplotlib.pyplot as plt
 
     txt_file = next(Path(root).glob(data_txt_file))
     grid = np.loadtxt(txt_file, skiprows=1, dtype=np.float32)
 
     y = x = np.arange(start=2.5, stop=3000, step=5)
-    grid = np.rot90(grid[:, 2].reshape(600, 600, 1))
+    grid = torch.from_numpy(grid[:, 2]).reshape(600, 600, 1)
 
+    # import colorcet as cc
+    # import matplotlib.pyplot as plt
     # fig, ax = plt.subplots(figsize=(10, 10))
     # plt.title("Total field (nT)")
     # plt.imshow(
@@ -226,4 +226,4 @@ def load_naprstek_synthetic(
     # ax.xaxis.set_major_locator(plt.MultipleLocator(250))
     # plt.grid(which="both", axis="x", c='k')
 
-    return grid
+    return grid.rot90().permute(2,0,1)

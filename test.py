@@ -192,19 +192,19 @@ def eval_psnr(
 
 
 def reshape(batch, h_pad, w_pad, coord, pred):
-            # gt reshape
-            ih, iw = batch["inp"].shape[-2:]
-            s = math.sqrt(batch["coord"].shape[1] / (ih * iw))
-            shape = [batch["inp"].shape[0], round(ih * s), round(iw * s), 1]
-            batch["gt"] = batch["gt"].view(*shape).permute(0, 3, 1, 2).contiguous()
+    # gt reshape
+    ih, iw = batch["inp"].shape[-2:]
+    s = math.sqrt(batch["coord"].shape[1] / (ih * iw))
+    shape = [batch["inp"].shape[0], round(ih * s), round(iw * s), 1]
+    batch["gt"] = batch["gt"].view(*shape).permute(0, 3, 1, 2).contiguous()
 
-            # prediction reshape
-            ih += h_pad
-            iw += w_pad
-            s = math.sqrt(coord.shape[1] / (ih * iw))
-            shape = [batch["inp"].shape[0], round(ih * s), round(iw * s), 1]
-            pred = pred.view(*shape).permute(0, 3, 1, 2).contiguous()
-            pred = pred[..., : batch["gt"].shape[-2], : batch["gt"].shape[-1]]
+    # prediction reshape
+    ih += h_pad
+    iw += w_pad
+    s = math.sqrt(coord.shape[1] / (ih * iw))
+    shape = [batch["inp"].shape[0], round(ih * s), round(iw * s), 1]
+    pred = pred.view(*shape).permute(0, 3, 1, 2).contiguous()
+    pred = pred[..., : batch["gt"].shape[-2], : batch["gt"].shape[-1]]
 
     return pred, batch
 
@@ -245,6 +245,65 @@ def single_sample_scale_range(loader, model, scales=[1, 2, 3, 4], model_name="")
 
 
 
+def process_custom_data():
+    """Run model on custom samples not in existing Dataset
+    For now, processes Naprstek synthetic test sample.
+    """
+    from datasets.noddyverse import HRLRNoddyverse, NoddyverseWrapper
+    from datasets.noddyverse import load_naprstek_synthetic as load_ns
+    class CustomTestDataset(HRLRNoddyverse):
+        def __init__(self, name, sample, **kwargs):
+            self.name = name
+            self.sample = sample
+            self.crop_extent = 600
+            self.inp_size = 600
+            self.sp = {
+                "hr_line_spacing": kwargs.get("hr_line_spacing", 1),
+                "sample_spacing": kwargs.get("sample_spacing", 20),
+                "heading": kwargs.get("heading", None),  # Default will be random
+            }
+        def _process(self, index):
+            self.data = {}
+            self.data["gt_grid"] = self.sample
+            hls = self.sp["hr_line_spacing"]
+            lls = int(hls * self.scale)
+            hr_x, hr_y, hr_z = self._subsample(self.data["gt_grid"], hls)
+            lr_x, lr_y, lr_z = self._subsample(self.data["gt_grid"], lls)
+            # lr dimension: self.inp_size
+            sample_crop_extent = self.crop_extent
+            lr_exent = int((sample_crop_extent / self.scale) * 4)  # cs_fac = 4
+            lr_e = int(torch.randint(low=0, high=lr_exent - 600, size=(1,)))
+            lr_n = int(torch.randint(low=0, high=lr_exent - 600, size=(1,)))
+            # Note - we use scale here as a factor describing how big HR is x LR.
+            # This diverges from what my brain apparently normally does ().
+            self.data["hr_grid"] = self._grid(
+                hr_x, hr_y, hr_z, scale=self.scale, ls=hls, lr_e=lr_e, lr_n=lr_n
+            )
+            self.data["lr_grid"] = self._grid(
+                lr_x, lr_y, lr_z, scale=1, ls=lls, lr_e=lr_e, lr_n=lr_n
+            )
+    synth = {
+        "naprstek": load_ns(
+            root="D:/luke/Noddy_data/test",
+            data_txt_file="Naprstek_BaseModel1-AllValues-1nTNoise.txt",
+        ),
+    }
+    dsets = []
+    for name, sample in synth.items():
+        args = config["test_dataset"]["dataset"]["args"]
+        dset = NoddyverseWrapper(
+            CustomTestDataset(
+                name,
+                sample,
+                hr_line_spacing=args["hr_line_spacing"],
+                sample_spacing=args["sample_spacing"],
+                heading=args["heading"],
+            )
+        )
+        dset.is_val = True
+        dset.scale = 2
+        dsets.append(dset)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -260,6 +319,9 @@ if __name__ == "__main__":
 
     with open(args.config, "r") as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
+
+    # process_custom_data()
+    # exit()
 
     spec = config["test_dataset"]
     dataset = datasets.make(spec["dataset"])
@@ -288,17 +350,17 @@ if __name__ == "__main__":
             loader, model, scales=[1, 2, 3, 4], model_name=last_model
         )
     else:
-    res = eval_psnr(
-        loader,
-        model,
-        data_norm=config.get("data_norm"),
-        eval_type=config.get("eval_type"),
-        eval_bsize=config.get("eval_bsize"),
-        window_size=int(args.window),
-        scale_max=int(args.scale_max),
-        fast=args.fast,
-        verbose=True,
-        rgb_range=config.get("rgb_range"),
-        model_name=last_model,
-    )
-    print("result: {:.4f}".format(res))
+        res = eval_psnr(
+            loader,
+            model,
+            data_norm=config.get("data_norm"),
+            eval_type=config.get("eval_type"),
+            eval_bsize=config.get("eval_bsize"),
+            window_size=int(args.window),
+            scale_max=int(args.scale_max),
+            fast=args.fast,
+            verbose=True,
+            rgb_range=config.get("rgb_range"),
+            model_name=last_model,
+        )
+        print("result: {:.4f}".format(res))
