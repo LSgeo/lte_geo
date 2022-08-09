@@ -37,6 +37,7 @@ class HRLRNoddyverse(NoddyDataset):
         kwargs["model_dir"] = root_path
         self.scale = -1  # init params
         self.inp_size = -1
+        self.is_val = False
         super().__init__(**kwargs)
 
     def __len__(self):
@@ -109,15 +110,29 @@ class HRLRNoddyverse(NoddyDataset):
 
         return np.expand_dims(grid, 0)  # add channel dimension
 
-    def _process(self, index):
+    def _process(self, index, d=180):
         super()._process(index)
 
         hls = self.sp["hr_line_spacing"]
         lls = int(hls * self.scale)
         hr_x, hr_y, hr_z = self._subsample(self.data["gt_grid"], hls)
         lr_x, lr_y, lr_z = self._subsample(self.data["gt_grid"], lls)
-        self.data["hr_grid"] = self._grid(hr_x, hr_y, hr_z, scale=1, ls=hls)
-        self.data["lr_grid"] = self._grid(lr_x, lr_y, lr_z, scale=self.scale, ls=lls)
+
+        # lr dimension: self.inp_size
+        
+        sample_crop_extent = d
+        lr_exent = int((sample_crop_extent / self.scale) * 4)  # cs_fac = 4
+        lr_e = int(torch.randint(low=0, high=lr_exent - self.inp_size, size=(1,)))
+        lr_n = int(torch.randint(low=0, high=lr_exent - self.inp_size, size=(1,)))
+
+        # Note - we use scale here as a factor describing how big HR is x LR.
+        # This diverges from what my brain apparently normally does.
+        self.data["hr_grid"] = self._grid(
+            hr_x, hr_y, hr_z, scale=self.scale, ls=hls, lr_e=lr_e, lr_n=lr_n, d=d
+        )
+        self.data["lr_grid"] = self._grid(
+            lr_x, lr_y, lr_z, scale=1, ls=lls, lr_e=lr_e, lr_n=lr_n, d=d
+        )
 
     def __getitem__(self, index):
         self._process(index)
@@ -142,11 +157,13 @@ class NoddyverseWrapper(Dataset):
         self.scale_max = scale_max or scale_min  # if not scale_max...
         self.augment = augment
         self.sample_q = sample_q  # clip hr samples to same length
+        self.is_val = False
 
     def __len__(self):
         return len(self.dataset)
 
     def __getitem__(self, index):
+        self.dataset.is_val = self.is_val
         self.dataset.scale = int(self.scale)
         data = self.dataset[index]
 

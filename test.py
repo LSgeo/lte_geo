@@ -2,19 +2,21 @@ import argparse
 import os
 import math
 from functools import partial
+from pathlib import Path
 
-import yaml
+import colorcet as cc
+import matplotlib.pyplot as plt
 import torch
-from torch.utils.data import DataLoader
+import yaml
+from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
 import datasets
 import models
 import utils
+from datasets.noddyverse import HRLRNoddyverse
+from mlnoddy.datasets import Norm, parse_geophysics
 
-import matplotlib.pyplot as plt
-from pathlib import Path
-import colorcet as cc
 
 
 def batched_predict(model, inp, coord, cell, bsize):
@@ -32,30 +34,48 @@ def batched_predict(model, inp, coord, cell, bsize):
     return pred
 
 
-def save_pred(lr, sr, hr, save_path="", suffix="", scale=None):
-    title = f"Magnetics_{scale}x_{suffix}.png"
+def save_pred(lr, sr, hr, gt_index, save_path="", suffix="", scale=None):
     Path(save_path).mkdir(parents=True, exist_ok=True)
-    lr = lr.detach().cpu().squeeze().numpy()
-    sr = sr.detach().cpu().squeeze().numpy()
-    hr = hr.detach().cpu().squeeze().numpy()
+    title = f"Magnetics_{suffix}_{scale}x.png"
+    norm = Norm(clip=5000)
+    lr = norm.inverse_mmc(lr.detach().cpu().squeeze().numpy())
+    sr = norm.inverse_mmc(sr.detach().cpu().squeeze().numpy())
+    hr = norm.inverse_mmc(hr.detach().cpu().squeeze().numpy())
+
+    gt_list = Path(spec["dataset"]["args"]["root_path"])
+    gt_list = [Path(str(p)[:-3]) for p in gt_list.glob("**/*.mag.gz")]
+    gt = next(parse_geophysics(gt_list[gt_index], mag=True))
+
+    # _min, _max = (norm.min,  norm.max)
+    _min, _max = (hr.min(), hr.max())
+    # _min, _max = (gt.min(), gt.max())
 
     plt_args = dict(
-        vmin=hr.min(),
-        vmax=hr.max(),
-        cmap=cc.cm.CET_L1,
+        vmin=_min,
+        vmax=_max,
+        cmap=cc.cm.CET_L8,
         origin="lower",
         interpolation="nearest",
     )
 
-    fig, [axlr, axsr, axhr] = plt.subplots(1, 3, figsize=(12, 4))
+    fig, [axlr, axsr, axhr, axgt] = plt.subplots(1, 4, figsize=(24, 8))
     plt.suptitle(title)
-    axlr.imshow(lr, **plt_args)
-    axsr.imshow(sr, **plt_args)
-    axhr.imshow(hr, **plt_args)
     axlr.set_title("LR")
+    imlr = axlr.imshow(lr, **plt_args)
+    plt.colorbar(mappable=imlr, ax=axlr, location="bottom")
     axsr.set_title("SR")
+    imsr = axsr.imshow(sr, **plt_args)
+    plt.colorbar(mappable=imsr, ax=axsr, location="bottom")
     axhr.set_title("HR")
-    # plt.colorbar()
+    imhr = axhr.imshow(hr, **plt_args)
+    plt.colorbar(mappable=imhr, ax=axhr, location="bottom")
+    axgt.set_title("GT")
+    plt_args.pop("vmin")
+    plt_args.pop("vmax")
+    plt_args["cmap"] = cc.cm.CET_L1
+    imgt = axgt.imshow(gt, **plt_args)
+    plt.colorbar(mappable=imgt, ax=axgt, location="bottom")
+    # lr_ls = ["dataset"]["args"]["hr_line_spacing"] * scale
     plt.savefig(Path(save_path) / title)
     plt.close()
 
@@ -100,6 +120,7 @@ def eval_psnr(
             scale=scale,
             rgb_range=rgb_range,
         )
+        loader.dataset.scale = scale
     else:
         raise NotImplementedError
 
@@ -146,9 +167,31 @@ def eval_psnr(
                 )  # cell clip for extrapolation
 
         pred = pred * gt_div + gt_sub
-        pred.clamp_(0, 1)
+        # pred.clamp_(0, 1)
 
         if eval_type is not None and fast == False:  # reshape for shaving-eval
+            pred, batch = reshape(batch, h_pad, w_pad, coord, pred)
+
+            save_pred(
+                lr=batch["inp"],
+                sr=pred,
+                hr=batch["gt"],
+                gt_index=config["visually_nice_test_samples"][i],
+                save_path=f"inference/{model_name}",
+                suffix=config["visually_nice_test_samples"][i],
+                scale=scale,
+            )
+
+        res = metric_fn(pred, batch["gt"])
+        val_res.add(res.item(), inp.shape[0])
+
+        if verbose:
+            pbar.set_description("PSNR test {:.4f}".format(val_res.item()))
+
+    return val_res.item()
+
+
+def reshape(batch, h_pad, w_pad, coord, pred):
             # gt reshape
             ih, iw = batch["inp"].shape[-2:]
             s = math.sqrt(batch["coord"].shape[1] / (ih * iw))
@@ -163,22 +206,44 @@ def eval_psnr(
             pred = pred.view(*shape).permute(0, 3, 1, 2).contiguous()
             pred = pred[..., : batch["gt"].shape[-2], : batch["gt"].shape[-1]]
 
+    return pred, batch
+
+
+def single_sample_scale_range(loader, model, scales=[1, 2, 3, 4], model_name=""):
+    model.eval()
+    pbar = tqdm(scales, leave=False, desc="scale_vis")
+
+    for scale in pbar:
+        loader.dataset.scale = scale
+
+        for i, batch in enumerate(loader):
+            for k, v in batch.items():
+                batch[k] = v.cuda()
+            h_pad = 0
+            w_pad = 0
+
+            inp = batch["inp"]
+            coord = batch["coord"]
+            cell = batch["cell"]
+
+            with torch.no_grad():
+                pred = model(inp, coord, cell)
+
+            pred, batch = reshape(batch, h_pad, w_pad, coord, pred)
+
             save_pred(
                 lr=batch["inp"],
                 sr=pred,
                 hr=batch["gt"],
-                save_path=f"{model_name}",
-                suffix=i,
+                gt_index=config["visually_nice_test_samples"][i],
+                save_path=f"inference/scale_vis/{model_name}",
+                suffix=config["visually_nice_test_samples"][i],
                 scale=scale,
             )
 
-        res = metric_fn(pred, batch["gt"])
-        val_res.add(res.item(), inp.shape[0])
 
-        if verbose:
-            pbar.set_description("PSNR test {:.4f}".format(val_res.item()))
 
-    return val_res.item()
+
 
 
 if __name__ == "__main__":
@@ -199,6 +264,11 @@ if __name__ == "__main__":
     spec = config["test_dataset"]
     dataset = datasets.make(spec["dataset"])
     dataset = datasets.make(spec["wrapper"], args={"dataset": dataset})
+    dataset.is_val = True
+
+    if True:  # config["show_scale_samples_not_eval"]:
+        dataset = Subset(dataset, config["visually_nice_test_samples"])
+
     loader = DataLoader(
         dataset,
         batch_size=spec["batch_size"],
@@ -213,6 +283,11 @@ if __name__ == "__main__":
     last_model = Path("D:/luke/lte_geo/save/_train_swinir-lte_geo/tensorboard")
     last_model = sorted(list(last_model.iterdir()))[-1].stem
 
+    if config["show_scale_samples_not_eval"]:
+        single_sample_scale_range(
+            loader, model, scales=[1, 2, 3, 4], model_name=last_model
+        )
+    else:
     res = eval_psnr(
         loader,
         model,
