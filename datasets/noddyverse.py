@@ -35,7 +35,7 @@ class HRLRNoddyverse(NoddyDataset):
             "heading": kwargs.get("heading", None),  # Default will be random
         }
         kwargs["model_dir"] = root_path
-        self.scale = -1  # init params
+        self.scale = None  # init params
         self.inp_size = -1
         self.is_val = False
         super().__init__(**kwargs)
@@ -152,7 +152,7 @@ class NoddyverseWrapper(Dataset):
     ):
         self.dataset = dataset
         self.dataset.inp_size = inp_size
-        self.scale = 1
+        self.scale = None
         self.scale_min = scale_min
         self.scale_max = scale_max or scale_min  # if not scale_max...
         self.augment = augment

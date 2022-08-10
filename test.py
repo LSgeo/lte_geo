@@ -18,7 +18,6 @@ from datasets.noddyverse import HRLRNoddyverse
 from mlnoddy.datasets import Norm, parse_geophysics
 
 
-
 def batched_predict(model, inp, coord, cell, bsize):
     with torch.no_grad():
         model.gen_feat(inp)
@@ -120,7 +119,7 @@ def eval_psnr(
             scale=scale,
             rgb_range=rgb_range,
         )
-        loader.dataset.scale = scale
+        loader.dataset.dataset.scale = scale  # Dataloader>Subset>Wrapper>NoddyDataset
     else:
         raise NotImplementedError
 
@@ -130,6 +129,8 @@ def eval_psnr(
     for i, batch in enumerate(pbar):
         for k, v in batch.items():
             batch[k] = v.cuda()
+
+        # pbar.write(f"Running scale: {loader.dataset.dataset.scale}")
 
         inp = (batch["inp"] - inp_sub) / inp_div
         # SwinIR Evaluation - reflection padding
@@ -214,7 +215,7 @@ def single_sample_scale_range(loader, model, scales=[1, 2, 3, 4], model_name="")
     pbar = tqdm(scales, leave=False, desc="scale_vis")
 
     for scale in pbar:
-        loader.dataset.scale = scale
+        loader.dataset.dataset.scale = scale
 
         for i, batch in enumerate(loader):
             for k, v in batch.items():
@@ -242,16 +243,12 @@ def single_sample_scale_range(loader, model, scales=[1, 2, 3, 4], model_name="")
             )
 
 
-
-
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="configs/test_swinir-lte_geo.yaml")
     parser.add_argument("--model", default="save/_train_swinir-lte_geo/epoch-best.pth")
     parser.add_argument("--window", default="0")
-    parser.add_argument("--scale_max", default="4")
+    # parser.add_argument("--scale_max", default="4")
     parser.add_argument("--fast", default=False)
     parser.add_argument("--gpu", default="0")
     args = parser.parse_args()
@@ -260,6 +257,7 @@ if __name__ == "__main__":
 
     with open(args.config, "r") as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
+    args.scale_max = config["test_dataset"]["wrapper"]["args"]["scale_max"]
 
     spec = config["test_dataset"]
     dataset = datasets.make(spec["dataset"])
