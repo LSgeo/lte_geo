@@ -59,7 +59,7 @@ class HRLRNoddyverse(NoddyDataset):
 
         return xx, yy, z
 
-    def _grid(self, x, y, z, scale, ls, lr_e, lr_n, cs_fac=4, d=180):
+    def _grid(self, x, y, z, ls, cs_fac=4, d=180):
         """Min Curvature grid xyz at scale, with ls/cs_fac cell size.
         Params:
             d: adjustable crop factor, but 180 is best for noddyverse. 200 Max.
@@ -76,14 +76,6 @@ class HRLRNoddyverse(NoddyDataset):
             ),
         )
         grid = grid.get("forward").values.astype(np.float32)
-
-        if self.is_val:
-            pass
-        else:
-            grid = grid[
-                lr_e : scale * self.inp_size + lr_e,
-                lr_n : scale * self.inp_size + lr_n,
-            ]
 
         # w_grd = self.inp_size * scale.item()
 
@@ -110,7 +102,20 @@ class HRLRNoddyverse(NoddyDataset):
 
         return np.expand_dims(grid, 0)  # add channel dimension
 
+    def _crop(self, grid, extent, scale):
+        if self.is_val:
+            return grid
+        else:
+            lr_e = extent[0] * scale
+            lr_n = extent[1] * scale
+            return grid[
+                :,
+                lr_e : lr_e + scale * self.inp_size,
+                lr_n : lr_n + scale * self.inp_size,
+            ]
+
     def _process(self, index, d=180):
+        # d is pixels in x, y to crop NAN from (if last row/col not sampled)
         super()._process(index)
 
         hls = self.sp["hr_line_spacing"]
@@ -118,20 +123,26 @@ class HRLRNoddyverse(NoddyDataset):
         hr_x, hr_y, hr_z = self._subsample(self.data["gt_grid"], hls)
         lr_x, lr_y, lr_z = self._subsample(self.data["gt_grid"], lls)
 
-        # lr dimension: self.inp_size
-        
-        sample_crop_extent = d
-        lr_exent = int((sample_crop_extent / self.scale) * 4)  # cs_fac = 4
-        lr_e = int(torch.randint(low=0, high=lr_exent - self.inp_size, size=(1,)))
-        lr_n = int(torch.randint(low=0, high=lr_exent - self.inp_size, size=(1,)))
-
         # Note - we use scale here as a factor describing how big HR is x LR.
-        # This diverges from what my brain apparently normally does.
-        self.data["hr_grid"] = self._grid(
-            hr_x, hr_y, hr_z, scale=self.scale, ls=hls, lr_e=lr_e, lr_n=lr_n, d=d
+        # I think this diverges from what my brain normally does.
+        self.data["hr_grid"] = self._grid(hr_x, hr_y, hr_z, ls=hls, d=d)
+        self.data["lr_grid"] = self._grid(lr_x, lr_y, lr_z, ls=lls, d=d)
+
+        # We grid lr and hr at their full extent and crop the same patch
+        # hr size is self.inp_size * self.scale
+        # self.inp_size is lr size _after_ cropping
+        # lr_extent is lr grid size _before_ cropping
+
+        # lr_extent = int((d / self.scale) * 4)  # cs_fac = 4
+        lr_extent = self.data["lr_grid"].shape[-1]
+        lr_e = int(torch.randint(low=0, high=lr_extent - self.inp_size, size=(1,)))
+        lr_n = int(torch.randint(low=0, high=lr_extent - self.inp_size, size=(1,)))
+
+        self.data["hr_grid"] = self._crop(
+            self.data["hr_grid"], extent=(lr_e, lr_n), scale=self.scale
         )
-        self.data["lr_grid"] = self._grid(
-            lr_x, lr_y, lr_z, scale=1, ls=lls, lr_e=lr_e, lr_n=lr_n, d=d
+        self.data["lr_grid"] = self._crop(
+            self.data["lr_grid"], extent=(lr_e, lr_n), scale=1
         )
 
     def __getitem__(self, index):
@@ -226,4 +237,4 @@ def load_naprstek_synthetic(
     # ax.xaxis.set_major_locator(plt.MultipleLocator(250))
     # plt.grid(which="both", axis="x", c='k')
 
-    return grid.rot90().permute(2,0,1)
+    return grid.rot90().permute(2, 0, 1)
