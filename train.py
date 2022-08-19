@@ -3,6 +3,7 @@
 import argparse
 import os
 
+from comet_ml import Experiment
 import yaml
 import torch
 import torch.nn as nn
@@ -99,6 +100,7 @@ def train(train_loader, model, optimizer, epoch):
     )
     iteration = 0
     for batch in tqdm(train_loader, leave=False, desc="train"):
+        c_exp.set_step(iteration + iter_per_epoch * epoch)
         # Set scale for next batch
         train_loader.dataset.scale = torch.randint(
             low=train_loader.dataset.scale_min,
@@ -130,6 +132,8 @@ def train(train_loader, model, optimizer, epoch):
         writer.add_scalars(
             "psnr", {"train": psnr}, (epoch - 1) * iter_per_epoch + iteration
         )
+        c_exp.log_metric("L1 loss", loss.item())
+        c_exp.log_metric("PSNR", psnr)
         iteration += 1
 
         train_loss.add(loss.item())
@@ -147,11 +151,12 @@ def train(train_loader, model, optimizer, epoch):
 def main(config_, save_path):
     from test import eval_psnr
 
-    global config, log, writer
+    global config, log, writer, c_exp
     config = config_
     log, writer = utils.set_save_path(save_path, remove=False)
     with open(os.path.join(save_path, "config.yaml"), "w") as f:
         yaml.dump(config, f, sort_keys=False)
+    c_exp = Experiment(disabled=not config["use_comet"])
 
     train_loader, val_loader = make_data_loaders()
     if config.get("data_norm") is None:
@@ -171,20 +176,25 @@ def main(config_, save_path):
     epoch_save = config.get("epoch_save")
     max_val_v = -1e18
 
+    c_exp.add_tags([])
+    c_exp.log_parameters(flatten_dict(config))
+
     timer = utils.Timer()
 
     for epoch in range(epoch_start, epoch_max + 1):
         t_epoch_start = timer.t()
         log_info = ["epoch {}/{}".format(epoch, epoch_max)]
+        c_exp.set_epoch(epoch)
 
         writer.add_scalar("lr", optimizer.param_groups[0]["lr"], epoch)
+        c_exp.log_metric("lr", optimizer.param_groups[0]["lr"])
 
         train_loss = train(train_loader, model, optimizer, epoch)
         if lr_scheduler is not None:
             lr_scheduler.step()
 
         log_info.append("train: loss={:.4f}".format(train_loss))
-        #         writer.add_scalars('loss', {'train': train_loss}, epoch)
+        # writer.add_scalars('loss', {'train': train_loss}, epoch)
 
         if n_gpus > 1:
             model_ = model.module
@@ -212,13 +222,18 @@ def main(config_, save_path):
                 data_norm=config["data_norm"],
                 eval_type=config.get("eval_type"),
                 eval_bsize=config.get("eval_bsize"),
+                exp=c_exp,
             )
 
             log_info.append("val: psnr={:.4f}".format(val_res))
-            #             writer.add_scalars('psnr', {'val': val_res}, epoch)
+            c_exp.log_metric("val_psnr", val_res)
+            # writer.add_scalars('psnr', {'val': val_res}, epoch)
             if val_res > max_val_v:
                 max_val_v = val_res
-                torch.save(sv_file, os.path.join(save_path, "epoch-best.pth"))
+                torch.save(
+                    sv_file,
+                    os.path.join(save_path, f"{c_exp.get_name()}_epoch-best.pth"),
+                )
 
         t = timer.t()
         prog = (epoch - epoch_start + 1) / (epoch_max - epoch_start + 1)
@@ -228,6 +243,33 @@ def main(config_, save_path):
 
         log(", ".join(log_info))
         writer.flush()
+
+
+def flatten_dict(cfg, sep=" | "):
+    """Flatten a 4-nested dictionary with {sep} as a separator for keys"""
+    flat_dict = {}
+    for k0, v0 in cfg.items():
+        try:
+            for k1, v1 in v0.items():
+                try:
+                    for k2, v2 in v1.items():
+                        try:
+                            for k3, v3 in v2.items():
+                                try:
+                                    for k4, v4 in v3.items():
+                                        flat_dict[
+                                            f"{k0}{sep}{k1}{sep}{k2}{sep}{k3}{sep}{k4}"
+                                        ] = v4
+                                except:
+                                    flat_dict[f"{k0}{sep}{k1}{sep}{k2}{sep}{k3}"] = v3
+                        except:
+                            flat_dict[f"{k0}{sep}{k1}{sep}{k2}"] = v2
+                except:
+                    flat_dict[f"{k0}{sep}{k1}"] = v1
+        except:
+            flat_dict[f"{k0}"] = v0
+
+    return flat_dict
 
 
 if __name__ == "__main__":

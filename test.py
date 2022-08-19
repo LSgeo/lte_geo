@@ -4,6 +4,7 @@ import math
 from functools import partial
 from pathlib import Path
 
+import comet_ml
 import colorcet as cc
 import matplotlib.pyplot as plt
 import torch
@@ -16,7 +17,6 @@ import models
 import utils
 from datasets.noddyverse import HRLRNoddyverse
 from mlnoddy.datasets import Norm, parse_geophysics
-
 
 
 def batched_predict(model, inp, coord, cell, bsize):
@@ -34,7 +34,16 @@ def batched_predict(model, inp, coord, cell, bsize):
     return pred
 
 
-def save_pred(lr, sr, hr, gt_index, save_path="", suffix="", scale=None):
+def save_pred(
+    lr,
+    sr,
+    hr,
+    gt_index,
+    save_path="",
+    suffix="",
+    scale=None,
+    c_exp:comet_ml.Experiment=None,
+):
     Path(save_path).mkdir(parents=True, exist_ok=True)
     title = f"Magnetics_{suffix}_{scale}x.png"
     norm = Norm(clip=5000)
@@ -42,42 +51,48 @@ def save_pred(lr, sr, hr, gt_index, save_path="", suffix="", scale=None):
     sr = norm.inverse_mmc(sr.detach().cpu().squeeze().numpy())
     hr = norm.inverse_mmc(hr.detach().cpu().squeeze().numpy())
 
-    gt_list = Path(spec["dataset"]["args"]["root_path"])
-    gt_list = [Path(str(p)[:-3]) for p in gt_list.glob("**/*.mag.gz")]
-    gt = next(parse_geophysics(gt_list[gt_index], mag=True))
+    if c_exp:  # Training context
+        c_exp.log_image(lr, name="LR", image_minmax=(-5000,5000))
+        c_exp.log_image(sr, name="SR", image_minmax=(-5000,5000))
+        c_exp.log_image(hr, name="HR", image_minmax=(-5000,5000))
 
-    # _min, _max = (norm.min,  norm.max)
-    _min, _max = (hr.min(), hr.max())
-    # _min, _max = (gt.min(), gt.max())
+    else:
+        gt_list = Path(spec["dataset"]["args"]["root_path"])
+        gt_list = [Path(str(p)[:-3]) for p in gt_list.glob("**/*.mag.gz")]
+        gt = next(parse_geophysics(gt_list[gt_index], mag=True))
 
-    plt_args = dict(
-        vmin=_min,
-        vmax=_max,
-        cmap=cc.cm.CET_L8,
-        origin="lower",
-        interpolation="nearest",
-    )
+        # _min, _max = (norm.min,  norm.max)
+        _min, _max = (hr.min(), hr.max())
+        # _min, _max = (gt.min(), gt.max())
 
-    fig, [axlr, axsr, axhr, axgt] = plt.subplots(1, 4, figsize=(24, 8))
-    plt.suptitle(title)
-    axlr.set_title("LR")
-    imlr = axlr.imshow(lr, **plt_args)
-    plt.colorbar(mappable=imlr, ax=axlr, location="bottom")
-    axsr.set_title("SR")
-    imsr = axsr.imshow(sr, **plt_args)
-    plt.colorbar(mappable=imsr, ax=axsr, location="bottom")
-    axhr.set_title("HR")
-    imhr = axhr.imshow(hr, **plt_args)
-    plt.colorbar(mappable=imhr, ax=axhr, location="bottom")
-    axgt.set_title("GT")
-    plt_args.pop("vmin")
-    plt_args.pop("vmax")
-    plt_args["cmap"] = cc.cm.CET_L1
-    imgt = axgt.imshow(gt, **plt_args)
-    plt.colorbar(mappable=imgt, ax=axgt, location="bottom")
-    # lr_ls = ["dataset"]["args"]["hr_line_spacing"] * scale
-    plt.savefig(Path(save_path) / title)
-    plt.close()
+        plt_args = dict(
+            vmin=_min,
+            vmax=_max,
+            cmap=cc.cm.CET_L8,
+            origin="lower",
+            interpolation="nearest",
+        )
+
+        fig, [axlr, axsr, axhr, axgt] = plt.subplots(1, 4, figsize=(24, 8))
+        plt.suptitle(title)
+        axlr.set_title("LR")
+        imlr = axlr.imshow(lr, **plt_args)
+        plt.colorbar(mappable=imlr, ax=axlr, location="bottom")
+        axsr.set_title("SR")
+        imsr = axsr.imshow(sr, **plt_args)
+        plt.colorbar(mappable=imsr, ax=axsr, location="bottom")
+        axhr.set_title("HR")
+        imhr = axhr.imshow(hr, **plt_args)
+        plt.colorbar(mappable=imhr, ax=axhr, location="bottom")
+        axgt.set_title("GT")
+        plt_args.pop("vmin")
+        plt_args.pop("vmax")
+        plt_args["cmap"] = cc.cm.CET_L1
+        imgt = axgt.imshow(gt, **plt_args)
+        plt.colorbar(mappable=imgt, ax=axgt, location="bottom")
+        # lr_ls = ["dataset"]["args"]["hr_line_spacing"] * scale
+        plt.savefig(Path(save_path) / title)
+        plt.close()
 
 
 def eval_psnr(
@@ -92,6 +107,7 @@ def eval_psnr(
     verbose=False,
     rgb_range=1,
     model_name="",
+    c_exp=None,
 ):
     model.eval()
 
@@ -180,6 +196,7 @@ def eval_psnr(
                 save_path=f"inference/{model_name}",
                 suffix=config["visually_nice_test_samples"][i],
                 scale=scale,
+                c_exp=c_exp,
             )
 
         res = metric_fn(pred, batch["gt"])
@@ -242,15 +259,13 @@ def single_sample_scale_range(loader, model, scales=[1, 2, 3, 4], model_name="")
             )
 
 
-
-
-
 def process_custom_data():
     """Run model on custom samples not in existing Dataset
     For now, processes Naprstek synthetic test sample.
     """
     from datasets.noddyverse import HRLRNoddyverse, NoddyverseWrapper
     from datasets.noddyverse import load_naprstek_synthetic as load_ns
+
     class CustomTestDataset(HRLRNoddyverse):
         def __init__(self, name, sample, **kwargs):
             self.name = name
@@ -262,6 +277,7 @@ def process_custom_data():
                 "sample_spacing": kwargs.get("sample_spacing", 20),
                 "heading": kwargs.get("heading", None),  # Default will be random
             }
+
         def _process(self, index):
             self.data = {}
             self.data["gt_grid"] = self.sample
@@ -282,6 +298,7 @@ def process_custom_data():
             self.data["lr_grid"] = self._grid(
                 lr_x, lr_y, lr_z, scale=1, ls=lls, lr_e=lr_e, lr_n=lr_n
             )
+
     synth = {
         "naprstek": load_ns(
             root="D:/luke/Noddy_data/test",
