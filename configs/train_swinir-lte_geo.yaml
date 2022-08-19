@@ -70,6 +70,6 @@ epoch_save: 26
 
 num_workers: 8
 rgb_range: 2 #noddyverse min max clip +-5000
-
+use_comet: True
 # resume: ./save/_train_swinir-lte/epoch-last.pth
 ## train.py#49 - change resume logic
