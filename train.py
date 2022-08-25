@@ -222,7 +222,7 @@ def main(config_, save_path):
                 data_norm=config["data_norm"],
                 eval_type=config.get("eval_type"),
                 eval_bsize=config.get("eval_bsize"),
-                exp=c_exp,
+                c_exp=c_exp,
             )
 
             log_info.append("val: psnr={:.4f}".format(val_res))
