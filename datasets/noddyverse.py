@@ -135,8 +135,8 @@ class HRLRNoddyverse(NoddyDataset):
 
         # lr_extent = int((d / self.scale) * 4)  # cs_fac = 4
         lr_extent = self.data["lr_grid"].shape[-1]
-        lr_e = int(torch.randint(low=0, high=lr_extent - self.inp_size, size=(1,)))
-        lr_n = int(torch.randint(low=0, high=lr_extent - self.inp_size, size=(1,)))
+        lr_e = int(torch.randint(low=0, high=lr_extent - self.inp_size + 1, size=(1,)))
+        lr_n = int(torch.randint(low=0, high=lr_extent - self.inp_size + 1, size=(1,)))
 
         self.data["hr_grid"] = self._crop(
             self.data["hr_grid"], extent=(lr_e, lr_n), scale=self.scale
