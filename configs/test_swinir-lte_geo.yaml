@@ -9,6 +9,7 @@ test_dataset:
   wrapper:
     name: noddyverse_wrapper
     args:
+      is_val: True
       inp_size: 48
       scale_min: 4
       scale_max: 4

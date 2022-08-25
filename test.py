@@ -51,48 +51,42 @@ def save_pred(
     sr = norm.inverse_mmc(sr.detach().cpu().squeeze().numpy())
     hr = norm.inverse_mmc(hr.detach().cpu().squeeze().numpy())
 
-    if c_exp:  # Training context
-        c_exp.log_image(lr, name="LR", image_minmax=(-5000,5000))
-        c_exp.log_image(sr, name="SR", image_minmax=(-5000,5000))
-        c_exp.log_image(hr, name="HR", image_minmax=(-5000,5000))
+    gt_list = Path(spec["dataset"]["args"]["root_path"])
+    gt_list = [Path(str(p)[:-3]) for p in gt_list.glob("**/*.mag.gz")]
+    gt = next(parse_geophysics(gt_list[gt_index], mag=True))
 
-    else:
-        gt_list = Path(spec["dataset"]["args"]["root_path"])
-        gt_list = [Path(str(p)[:-3]) for p in gt_list.glob("**/*.mag.gz")]
-        gt = next(parse_geophysics(gt_list[gt_index], mag=True))
+    # _min, _max = (norm.min,  norm.max)
+    _min, _max = (hr.min(), hr.max())
+    # _min, _max = (gt.min(), gt.max())
 
-        # _min, _max = (norm.min,  norm.max)
-        _min, _max = (hr.min(), hr.max())
-        # _min, _max = (gt.min(), gt.max())
+    plt_args = dict(
+        vmin=_min,
+        vmax=_max,
+        cmap=cc.cm.CET_L8,
+        origin="lower",
+        interpolation="nearest",
+    )
 
-        plt_args = dict(
-            vmin=_min,
-            vmax=_max,
-            cmap=cc.cm.CET_L8,
-            origin="lower",
-            interpolation="nearest",
-        )
-
-        fig, [axlr, axsr, axhr, axgt] = plt.subplots(1, 4, figsize=(24, 8))
-        plt.suptitle(title)
-        axlr.set_title("LR")
-        imlr = axlr.imshow(lr, **plt_args)
-        plt.colorbar(mappable=imlr, ax=axlr, location="bottom")
-        axsr.set_title("SR")
-        imsr = axsr.imshow(sr, **plt_args)
-        plt.colorbar(mappable=imsr, ax=axsr, location="bottom")
-        axhr.set_title("HR")
-        imhr = axhr.imshow(hr, **plt_args)
-        plt.colorbar(mappable=imhr, ax=axhr, location="bottom")
-        axgt.set_title("GT")
-        plt_args.pop("vmin")
-        plt_args.pop("vmax")
-        plt_args["cmap"] = cc.cm.CET_L1
-        imgt = axgt.imshow(gt, **plt_args)
-        plt.colorbar(mappable=imgt, ax=axgt, location="bottom")
-        # lr_ls = ["dataset"]["args"]["hr_line_spacing"] * scale
-        plt.savefig(Path(save_path) / title)
-        plt.close()
+    fig, [axlr, axsr, axhr, axgt] = plt.subplots(1, 4, figsize=(24, 8))
+    plt.suptitle(title)
+    axlr.set_title("LR")
+    imlr = axlr.imshow(lr, **plt_args)
+    plt.colorbar(mappable=imlr, ax=axlr, location="bottom")
+    axsr.set_title("SR")
+    imsr = axsr.imshow(sr, **plt_args)
+    plt.colorbar(mappable=imsr, ax=axsr, location="bottom")
+    axhr.set_title("HR")
+    imhr = axhr.imshow(hr, **plt_args)
+    plt.colorbar(mappable=imhr, ax=axhr, location="bottom")
+    axgt.set_title("GT")
+    plt_args.pop("vmin")
+    plt_args.pop("vmax")
+    plt_args["cmap"] = cc.cm.CET_L1
+    imgt = axgt.imshow(gt, **plt_args)
+    plt.colorbar(mappable=imgt, ax=axgt, location="bottom")
+    # lr_ls = ["dataset"]["args"]["hr_line_spacing"] * scale
+    plt.savefig(Path(save_path) / title)
+    plt.close()
 
 
 def eval_psnr(
@@ -107,7 +101,7 @@ def eval_psnr(
     verbose=False,
     rgb_range=1,
     model_name="",
-    c_exp=None,
+    c_exp:comet_ml.Experiment=None,
 ):
     model.eval()
 

@@ -35,9 +35,9 @@ class HRLRNoddyverse(NoddyDataset):
             "heading": kwargs.get("heading", None),  # Default will be random
         }
         kwargs["model_dir"] = root_path
-        self.scale = -1  # init params
-        self.inp_size = -1
-        self.is_val = False
+        self.scale = None  # init params
+        self.inp_size = None
+        self.is_val = None # set after wrapper
         super().__init__(**kwargs)
 
     def __len__(self):
@@ -156,19 +156,20 @@ class NoddyverseWrapper(Dataset):
         self,
         dataset,
         inp_size=None,
-        scale_min=1,
+        scale_min=2,
         scale_max=None,
         augment=False,
         sample_q=None,
+        is_val=False,
     ):
         self.dataset = dataset
         self.dataset.inp_size = inp_size
-        self.scale = 1
+        self.scale = scale_min
         self.scale_min = scale_min
         self.scale_max = scale_max or scale_min  # if not scale_max...
         self.augment = augment
         self.sample_q = sample_q  # clip hr samples to same length
-        self.is_val = False
+        self.is_val = is_val
 
     def __len__(self):
         return len(self.dataset)

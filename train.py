@@ -8,12 +8,13 @@ import yaml
 import torch
 import torch.nn as nn
 from tqdm import tqdm
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from torch.optim.lr_scheduler import MultiStepLR
 
 import datasets
 import models
 import utils
+from test import reshape
 
 
 def make_data_loader(spec, tag=""):
@@ -22,26 +23,38 @@ def make_data_loader(spec, tag=""):
 
     dataset = datasets.make(spec["dataset"])
     dataset = datasets.make(spec["wrapper"], args={"dataset": dataset})
-
+    if "preview" in tag:
+        dataset = Subset(dataset, config["visually_nice_val_samples"])
+        bs = 1
+        num_workers = 1
+    else:
+        bs = spec["batch_size"]
+        num_workers = config.get("num_workers")
     log("{} dataset: size={}".format(tag, len(dataset)))
     for k, v in dataset[0].items():
         log("  {}: shape={}".format(k, tuple(v.shape)))
 
     loader = DataLoader(
         dataset,
-        batch_size=spec["batch_size"],
+        batch_size=bs,
         shuffle=(tag == "train"),
-        num_workers=config.get("num_workers"),
-        persistent_workers=bool(config.get("num_workers")),
+        num_workers=num_workers,
+        persistent_workers=bool(num_workers),
         pin_memory=True,
     )
+    if "preview" in tag:
+        loader.dataset.scale = int(config["eval_type"].split("-")[1])  # default 4
+        c_exp.log_parameter("Preview scale", dataset.scale)
+
     return loader
 
 
 def make_data_loaders():
     train_loader = make_data_loader(config.get("train_dataset"), tag="train")
     val_loader = make_data_loader(config.get("val_dataset"), tag="val")
-    return train_loader, val_loader
+    preview_loader = make_data_loader(config.get("val_dataset"), tag="preview")
+
+    return train_loader, val_loader, preview_loader
 
 
 def prepare_training():
@@ -114,7 +127,7 @@ def train(train_loader, model, optimizer, epoch):
                 size=(1,),
             )
             print(f"set scale to {train_loader.dataset.scale} instead of 7")
-
+        c_exp.log_parameter("Batch scale", train_loader.dataset.scale)
         for k, v in batch.items():
             batch[k] = v.to("cuda", non_blocking=True)
 
@@ -148,6 +161,46 @@ def train(train_loader, model, optimizer, epoch):
     return train_loss.item()
 
 
+def log_images(loader, model, c_exp: Experiment):
+    model.eval()
+    with torch.no_grad():
+        for i, batch in enumerate(loader):
+            h_pad = 0
+            w_pad = 0
+
+            inp = batch["inp"].to("cuda", non_blocking=True)
+            coord = batch["coord"].to("cuda", non_blocking=True)
+            cell = batch["cell"].to("cuda", non_blocking=True)
+
+            pred = model(inp, coord, cell)
+            pred, batch = reshape(batch, h_pad, w_pad, coord, pred)
+            inp = batch["inp"].detach().cpu()
+            pred = pred.detach().cpu()
+            gt = batch["gt"].detach().cpu()
+
+            for j in range(len(batch["gt"])):  # should always be 1, but is handled
+                _min = gt[j].min().item()
+                _max = gt[j].max().item()
+                c_exp.log_image(
+                    image_data=pred[j].squeeze().numpy(),
+                    name=f"sample_{config['visually_nice_val_samples'][i]:03d}_sr",
+                    image_minmax=(_min, _max),
+                )
+                if c_exp.curr_epoch == 1:
+                    c_exp.log_image(
+                        image_data=inp[j].squeeze().numpy(),
+                        name=f"sample_{config['visually_nice_val_samples'][i]:03d}_lr",
+                        image_minmax=(_min, _max),
+                    )
+                    c_exp.log_image(
+                        image_data=gt[j].squeeze().numpy(),
+                        name=f"sample_{config['visually_nice_val_samples'][i]:03d}_hr",
+                        image_minmax=(_min, _max),
+                    )
+
+    return None
+
+
 def main(config_, save_path):
     from test import eval_psnr
 
@@ -158,7 +211,7 @@ def main(config_, save_path):
         yaml.dump(config, f, sort_keys=False)
     c_exp = Experiment(disabled=not config["use_comet"])
 
-    train_loader, val_loader = make_data_loaders()
+    train_loader, val_loader, preview_loader = make_data_loaders()
     if config.get("data_norm") is None:
         config["data_norm"] = {
             "inp": {"sub": [0], "div": [1]},
@@ -224,6 +277,8 @@ def main(config_, save_path):
                 eval_bsize=config.get("eval_bsize"),
                 c_exp=c_exp,
             )
+
+            log_images(preview_loader, model_, c_exp)
 
             log_info.append("val: psnr={:.4f}".format(val_res))
             c_exp.log_metric("val_psnr", val_res)
