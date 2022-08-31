@@ -42,7 +42,7 @@ def save_pred(
     save_path="",
     suffix="",
     scale=None,
-    c_exp:comet_ml.Experiment=None,
+    c_exp: comet_ml.Experiment = None,
 ):
     Path(save_path).mkdir(parents=True, exist_ok=True)
     title = f"Magnetics_{suffix}_{scale}x.png"
@@ -98,10 +98,10 @@ def eval_psnr(
     window_size=0,
     scale_max=4,
     fast=False,
-    verbose=False,
+    verbose=True,
     rgb_range=1,
     model_name="",
-    c_exp:comet_ml.Experiment=None,
+    c_exp: comet_ml.Experiment = None,
 ):
     model.eval()
 
@@ -131,13 +131,24 @@ def eval_psnr(
             rgb_range=rgb_range,
         )
         loader.dataset.scale = scale
+        if __name__ == "__main__":
+            loader.dataset.scale_min = scale
+            loader.dataset.scale_max = scale
     else:
         raise NotImplementedError
 
+    l1_fn = torch.nn.L1Loss()
+    l1_res = utils.Averager()
     val_res = utils.Averager()
 
     pbar = tqdm(loader, leave=False, desc="test")
     for i, batch in enumerate(pbar):
+        loader.dataset.scale = torch.randint(
+            low=loader.dataset.scale_min,
+            high=loader.dataset.scale_max + 1,
+            size=(1,),
+        )
+
         for k, v in batch.items():
             batch[k] = v.cuda()
 
@@ -178,28 +189,30 @@ def eval_psnr(
 
         pred = pred * gt_div + gt_sub
         # pred.clamp_(0, 1)
-
         if eval_type is not None and fast == False:  # reshape for shaving-eval
             pred, batch = reshape(batch, h_pad, w_pad, coord, pred)
 
-            save_pred(
-                lr=batch["inp"],
-                sr=pred,
-                hr=batch["gt"],
-                gt_index=config["visually_nice_test_samples"][i],
-                save_path=f"inference/{model_name}",
-                suffix=config["visually_nice_test_samples"][i],
-                scale=scale,
-                c_exp=c_exp,
-            )
+            if __name__ == "__main__":
+                save_pred(
+                    lr=batch["inp"],
+                    sr=pred,
+                    hr=batch["gt"],
+                    gt_index=config["visually_nice_test_samples"][i],
+                    save_path=f"inference/{model_name}",
+                    suffix=config["visually_nice_test_samples"][i],
+                    scale=scale,
+                    c_exp=c_exp,
+                )
 
         res = metric_fn(pred, batch["gt"])
+        l1_metric = l1_fn(pred, batch["gt"])
+        l1_res.add(l1_metric.detach().cpu().numpy(), inp.shape[0])
         val_res.add(res.item(), inp.shape[0])
 
         if verbose:
             pbar.set_description("PSNR test {:.4f}".format(val_res.item()))
 
-    return val_res.item()
+    return l1_res.item(), val_res.item()
 
 
 def reshape(batch, h_pad, w_pad, coord, pred):
