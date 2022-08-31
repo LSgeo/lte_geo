@@ -37,7 +37,7 @@ class HRLRNoddyverse(NoddyDataset):
         kwargs["model_dir"] = root_path
         self.scale = None  # init params
         self.inp_size = None
-        self.is_val = None # set after wrapper
+        self.is_val = None  # set after wrapper
         super().__init__(**kwargs)
 
     def __len__(self):
@@ -128,6 +128,48 @@ class HRLRNoddyverse(NoddyDataset):
         self.data["hr_grid"] = self._grid(hr_x, hr_y, hr_z, ls=hls, d=d)
         self.data["lr_grid"] = self._grid(lr_x, lr_y, lr_z, ls=lls, d=d)
 
+        _DEBUG = False
+        if _DEBUG:
+            import matplotlib.pyplot as plt
+            import colorcet as cc
+            from torchvision.transforms.functional import resize
+            from torchvision.transforms import InterpolationMode
+
+            fig, [
+                [axgt, axhr, axlr],
+                [axoff, axdgh, axdlr],
+            ] = plt.subplots(2, 3)
+            plt.suptitle(f"{self.scale}x gridding debug visualisations_id-{index}")
+
+            axgt.set_title("gt")
+            axgt.imshow(self.data["gt_grid"][:, :180, :180].squeeze())
+            axhr.set_title("hr")
+            axhr.imshow(self.data["hr_grid"].squeeze())
+            axlr.set_title("lr")
+            axlr.imshow(self.data["lr_grid"].squeeze())
+            axoff.set_axis_off()
+            axdgh.set_title("gt - hr")
+            dgh = axdgh.imshow(
+                (self.data["gt_grid"][:, :180, :180] - self.data["hr_grid"]).squeeze(),
+                cmap=cc.cm.CET_D1,
+            )
+            plt.colorbar(dgh, ax=axdgh, location="bottom")
+            axdlr.set_title("resize_gt - lr")
+            dlr = axdlr.imshow(
+                (
+                    resize(
+                        self.data["gt_grid"][:, :180, :180],
+                        self.data["lr_grid"].shape[1:],
+                        InterpolationMode.BICUBIC,
+                    )
+                    - self.data["lr_grid"]
+                ).squeeze(),
+                cmap=cc.cm.CET_D1,
+            )
+            plt.colorbar(dlr, ax=axdlr, location="bottom")
+
+        if _DEBUG:
+            plt.close()
         # We grid lr and hr at their full extent and crop the same patch
         # hr size is self.inp_size * self.scale
         # self.inp_size is lr size _after_ cropping
