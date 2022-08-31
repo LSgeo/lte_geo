@@ -23,14 +23,17 @@ def make_data_loader(spec, tag=""):
 
     dataset = datasets.make(spec["dataset"])
     dataset = datasets.make(spec["wrapper"], args={"dataset": dataset})
+    log(f"{tag} dataset:")
     if "preview" in tag:
         dataset = Subset(dataset, config["visually_nice_val_samples"])
         bs = 1
         num_workers = 1
+        log(f"  Scale range: {dataset.dataset.scale_min} to {dataset.dataset.scale_max}")
     else:
         bs = spec["batch_size"]
         num_workers = config.get("num_workers")
-    log("{} dataset: size={}".format(tag, len(dataset)))
+        log(f"  Scale range: {dataset.scale_min} to {dataset.scale_max}")
+    log(f"  Size: {len(dataset)}")
     for k, v in dataset[0].items():
         log("  {}: shape={}".format(k, tuple(v.shape)))
 
@@ -43,8 +46,10 @@ def make_data_loader(spec, tag=""):
         pin_memory=True,
     )
     if "preview" in tag:
-        loader.dataset.scale = int(config["eval_type"].split("-")[1])  # default 4
-        c_exp.log_parameter("Preview scale", dataset.scale)
+        loader.dataset.dataset.scale = int(
+            config["eval_type"].split("-")[1]
+        )  # default 4
+        c_exp.log_parameter("Preview scale", loader.dataset.dataset.scale)
 
     return loader
 
@@ -113,7 +118,7 @@ def train(train_loader, model, optimizer, epoch):
     )
     iteration = 0
     for batch in tqdm(train_loader, leave=False, desc="train"):
-        c_exp.set_step(iteration + iter_per_epoch * epoch)
+        c_exp.set_step(iteration + (iter_per_epoch * (epoch - 1)))
         # Set scale for next batch
         train_loader.dataset.scale = torch.randint(
             low=train_loader.dataset.scale_min,
@@ -128,13 +133,14 @@ def train(train_loader, model, optimizer, epoch):
             )
             print(f"set scale to {train_loader.dataset.scale} instead of 7")
         c_exp.log_parameter("Batch scale", train_loader.dataset.scale)
+
         for k, v in batch.items():
             batch[k] = v.to("cuda", non_blocking=True)
 
         inp = (batch["inp"] - inp_sub) / inp_div
+        gt = (batch["gt"] - gt_sub) / gt_div
         pred = model(inp, batch["coord"], batch["cell"])
 
-        gt = (batch["gt"] - gt_sub) / gt_div
         loss = loss_fn(pred, gt)
         psnr = metric_fn(pred, gt, rgb_range=config.get("rgb_range"))
 
@@ -145,8 +151,8 @@ def train(train_loader, model, optimizer, epoch):
         writer.add_scalars(
             "psnr", {"train": psnr}, (epoch - 1) * iter_per_epoch + iteration
         )
-        c_exp.log_metric("L1 loss", loss.item())
-        c_exp.log_metric("PSNR", psnr)
+        c_exp.log_metric("L1 loss_Train", loss.item())
+        c_exp.log_metric("PSNR_Train", psnr)
         iteration += 1
 
         train_loss.add(loss.item())
@@ -164,7 +170,9 @@ def train(train_loader, model, optimizer, epoch):
 def log_images(loader, model, c_exp: Experiment):
     model.eval()
     with torch.no_grad():
-        for i, batch in enumerate(loader):
+        for i, batch in enumerate(
+            tqdm(loader, leave=False, desc="Generating Previews")
+        ):
             h_pad = 0
             w_pad = 0
 
@@ -269,7 +277,7 @@ def main(config_, save_path):
                 model_ = model.module
             else:
                 model_ = model
-            val_res = eval_psnr(
+            val_l1, val_res = eval_psnr(
                 val_loader,
                 model_,
                 data_norm=config["data_norm"],
@@ -281,7 +289,8 @@ def main(config_, save_path):
             log_images(preview_loader, model_, c_exp)
 
             log_info.append("val: psnr={:.4f}".format(val_res))
-            c_exp.log_metric("val_psnr", val_res)
+            c_exp.log_metric("L1 loss_Val", val_l1)
+            c_exp.log_metric("PSNR_Val", val_res)
             # writer.add_scalars('psnr', {'val': val_res}, epoch)
             if val_res > max_val_v:
                 max_val_v = val_res
