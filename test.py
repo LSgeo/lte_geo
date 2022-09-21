@@ -114,6 +114,7 @@ def eval_psnr(
     rgb_range=1,
     model_name="",
     c_exp: comet_ml.Experiment = None,
+    shave=None,
     save_path="",
 ):
     model.eval()
@@ -142,6 +143,7 @@ def eval_psnr(
             dataset="noddyverse",
             scale=scale,
             rgb_range=rgb_range,
+            shave=shave,
         )
         loader.dataset.scale = scale
         if __name__ == "__main__":
@@ -252,6 +254,7 @@ def single_sample_scale_range(loader, model, scales=[1, 2, 3, 4], model_name="")
 
     for scale in pbar:
         loader.dataset.scale = scale
+        loader.dataset.dataset.scale = scale
 
         for i, batch in enumerate(loader):
             for k, v in batch.items():
@@ -406,6 +409,7 @@ if __name__ == "__main__":
             verbose=True,
             rgb_range=config.get("rgb_range"),
             model_name=model_name,
+            shave=6,
             save_path=save_path
         )
         print( 

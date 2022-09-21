@@ -126,7 +126,7 @@ def to_pixel_samples(img):
     return coord, rgb
 
 
-def calc_psnr(sr, hr, dataset=None, scale=1, rgb_range=1):
+def calc_psnr(sr, hr, dataset=None, scale=1, rgb_range=1, shave=None):
     diff = (sr - hr) / rgb_range
     if dataset is not None:
         if dataset == "benchmark":
@@ -138,7 +138,9 @@ def calc_psnr(sr, hr, dataset=None, scale=1, rgb_range=1):
         elif dataset == "div2k":
             shave = scale + 6
         elif dataset == "noddyverse":
-            shave = scale + 6  # TODO figure out
+            if not shave:
+                shave = 0
+                # TODO figure out what shave is for / what is shaved
         else:
             raise NotImplementedError
         valid = diff[..., shave:-shave, shave:-shave]
