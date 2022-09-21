@@ -7,8 +7,10 @@ from pathlib import Path
 import comet_ml
 import colorcet as cc
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import yaml
+from PIL import Image
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
@@ -50,6 +52,7 @@ def save_pred(
     lr = norm.inverse_mmc(lr.detach().cpu().squeeze().numpy())
     sr = norm.inverse_mmc(sr.detach().cpu().squeeze().numpy())
     hr = norm.inverse_mmc(hr.detach().cpu().squeeze().numpy())
+    bc = np.array(Image.fromarray(lr).resize(hr.shape, Image.Resampling.BICUBIC))
 
     gt_list = Path(spec["dataset"]["args"]["root_path"])
     gt_list = [Path(str(p)[:-3]) for p in gt_list.glob("**/*.mag.gz")]
@@ -67,23 +70,32 @@ def save_pred(
         interpolation="nearest",
     )
 
-    fig, [axlr, axsr, axhr, axgt] = plt.subplots(1, 4, figsize=(24, 8))
+    fig, [axlr, axbc, axsr, axhr, axgt] = plt.subplots(1, 5, figsize=(26, 8))
     plt.suptitle(title)
+    
     axlr.set_title("LR")
     imlr = axlr.imshow(lr, **plt_args)
     plt.colorbar(mappable=imlr, ax=axlr, location="bottom")
+
+    axbc.set_title("Bicubic")
+    imbc = axbc.imshow(bc, **plt_args)
+    plt.colorbar(mappable=imbc, ax=axbc, location="bottom")
+    
     axsr.set_title("SR")
     imsr = axsr.imshow(sr, **plt_args)
     plt.colorbar(mappable=imsr, ax=axsr, location="bottom")
+    
     axhr.set_title("HR")
     imhr = axhr.imshow(hr, **plt_args)
     plt.colorbar(mappable=imhr, ax=axhr, location="bottom")
+    
     axgt.set_title("GT")
     plt_args.pop("vmin")
     plt_args.pop("vmax")
     plt_args["cmap"] = cc.cm.CET_L1
     imgt = axgt.imshow(gt, **plt_args)
     plt.colorbar(mappable=imgt, ax=axgt, location="bottom")
+    
     # lr_ls = ["dataset"]["args"]["hr_line_spacing"] * scale
     plt.savefig(Path(save_path) / title)
     plt.close()
@@ -102,6 +114,7 @@ def eval_psnr(
     rgb_range=1,
     model_name="",
     c_exp: comet_ml.Experiment = None,
+    save_path="",
 ):
     model.eval()
 
@@ -198,7 +211,7 @@ def eval_psnr(
                     sr=pred,
                     hr=batch["gt"],
                     gt_index=config["visually_nice_test_samples"][i],
-                    save_path=f"inference/{model_name}",
+                    save_path=save_path,
                     suffix=config["visually_nice_test_samples"][i],
                     scale=scale,
                     c_exp=c_exp,
@@ -332,7 +345,7 @@ def process_custom_data():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="configs/test_swinir-lte_geo.yaml")
-    parser.add_argument("--model", default="save/_train_swinir-lte_geo/epoch-best.pth")
+    parser.add_argument("--model", default="D:/luke/lte_geo/save/_train_swinir-lte_geo") # Specify dir containing model .pths
     parser.add_argument("--window", default="0")
     parser.add_argument("--scale_max", default="4")
     parser.add_argument("--fast", default=False)
@@ -363,15 +376,22 @@ if __name__ == "__main__":
         pin_memory=True,
     )
 
-    model_spec = torch.load(args.model)["model"]
+    model_dir = Path(args.model)
+    model_name = config["model_name"]
+    model_path = list(model_dir.glob(f"**/*{model_name}*.pth"))
+    assert len(model_path) == 1
+    model_path = model_path[0]
+    # last_model = Path("D:/luke/lte_geo/save/_train_swinir-lte_geo/tensorboard")
+    # last_model = sorted(list(last_model.iterdir()))[-1].stem
+
+    model_spec = torch.load(model_path)["model"]
     model = models.make(model_spec, load_sd=True).cuda()
 
-    last_model = Path("D:/luke/lte_geo/save/_train_swinir-lte_geo/tensorboard")
-    last_model = sorted(list(last_model.iterdir()))[-1].stem
+    save_path = Path(f"inference/{model_name}")
 
     if config["show_scale_samples_not_eval"]:
         single_sample_scale_range(
-            loader, model, scales=[1, 2, 3, 4], model_name=last_model
+            loader, model, scales=[1, 2, 3, 4, 6], model_name=model_name
         )
     else:
         res = eval_psnr(
@@ -385,6 +405,10 @@ if __name__ == "__main__":
             fast=args.fast,
             verbose=True,
             rgb_range=config.get("rgb_range"),
-            model_name=last_model,
+            model_name=model_name,
+            save_path=save_path
         )
-        print("result: {:.4f}".format(res))
+        print( 
+            f"Model: {model_path.absolute()}\n"
+            f"L1: {res[0]:.4f} PSNR: {res[1]:.4f}\n"
+            f"Saved to: {save_path}")

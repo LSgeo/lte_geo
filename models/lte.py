@@ -115,6 +115,8 @@ class LTE(nn.Module):
         ret = 0
         for pred, area in zip(preds, areas):
             ret = ret + pred * (area / tot_area).unsqueeze(-1)
+        
+        ### LONG RANGE SKIP CONNECTION ###
         ret += F.grid_sample(
             self.inp,
             coord.flip(-1).unsqueeze(1),
@@ -122,8 +124,14 @@ class LTE(nn.Module):
             padding_mode="border",
             align_corners=False,
         )[:, :, 0, :].permute(0, 2, 1)
+
         return ret
 
     def forward(self, inp, coord, cell):
+        # import matplotlib.pyplot as plt
+        # fig, axs = plt.subplots(len(inp), 1, figsize=(5, 25))
+        # for i, ax in enumerate(axs):
+        #     ax.imshow(inp[i, :, :].squeeze().cpu())
+
         self.gen_feat(inp)
         return self.query_rgb(coord, cell)

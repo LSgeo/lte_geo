@@ -125,14 +125,14 @@ def train(train_loader, model, optimizer, epoch):
             high=train_loader.dataset.scale_max + 1,
             size=(1,),
         )
-        while train_loader.dataset.scale == 7:  # or (self.scale == 8: # if cs_fac=5)
-            train_loader.dataset.scale = torch.randint(
-                low=train_loader.dataset.scale_min,
-                high=train_loader.dataset.scale_max + 1,
-                size=(1,),
-            )
-            print(f"set scale to {train_loader.dataset.scale} instead of 7")
-        c_exp.log_parameter("Batch scale", train_loader.dataset.scale)
+        # while train_loader.dataset.scale == 7:  # or (self.scale == 8: # if cs_fac=5)
+        #     train_loader.dataset.scale = torch.randint(
+        #         low=train_loader.dataset.scale_min,
+        #         high=train_loader.dataset.scale_max + 1,
+        #         size=(1,),
+        #     )
+        #     print(f"set scale to {train_loader.dataset.scale} instead of 7")
+        c_exp.log_metric("Batch scale", train_loader.dataset.scale)
 
         for k, v in batch.items():
             batch[k] = v.to("cuda", non_blocking=True)
@@ -151,8 +151,8 @@ def train(train_loader, model, optimizer, epoch):
         writer.add_scalars(
             "psnr", {"train": psnr}, (epoch - 1) * iter_per_epoch + iteration
         )
-        c_exp.log_metric("L1 loss_Train", loss.item())
-        c_exp.log_metric("PSNR_Train", psnr)
+        c_exp.log_metric("L1 loss Train", loss.item())
+        c_exp.log_metric("PSNR Train", psnr)
         iteration += 1
 
         train_loss.add(loss.item())
@@ -206,7 +206,7 @@ def log_images(loader, model, c_exp: Experiment):
                         image_minmax=(_min, _max),
                     )
 
-    return None
+    
 
 
 def main(config_, save_path):
@@ -248,13 +248,14 @@ def main(config_, save_path):
         c_exp.set_epoch(epoch)
 
         writer.add_scalar("lr", optimizer.param_groups[0]["lr"], epoch)
-        c_exp.log_metric("lr", optimizer.param_groups[0]["lr"])
+        c_exp.log_metric("LR", optimizer.param_groups[0]["lr"])
 
         train_loss = train(train_loader, model, optimizer, epoch)
         if lr_scheduler is not None:
             lr_scheduler.step()
 
         log_info.append("train: loss={:.4f}".format(train_loss))
+        c_exp.log_metric("L1 loss Train", train_loss)
         # writer.add_scalars('loss', {'train': train_loss}, epoch)
 
         if n_gpus > 1:
@@ -267,10 +268,11 @@ def main(config_, save_path):
         optimizer_spec["sd"] = optimizer.state_dict()
         sv_file = {"model": model_spec, "optimizer": optimizer_spec, "epoch": epoch}
 
-        torch.save(sv_file, os.path.join(save_path, "epoch-last.pth"))
+        torch.save(sv_file, os.path.join(save_path, f"{c_exp.get_name()}_epoch-last.pth"))
+        
 
         if (epoch_save is not None) and (epoch % epoch_save == 0):
-            torch.save(sv_file, os.path.join(save_path, "epoch-{}.pth".format(epoch)))
+            torch.save(sv_file, os.path.join(save_path, f"{c_exp.get_name()}_epoch-{epoch}.pth"))
 
         if (epoch_val is not None) and (epoch % epoch_val == 0):
             if n_gpus > 1 and (config.get("eval_bsize") is not None):
@@ -288,9 +290,9 @@ def main(config_, save_path):
 
             log_images(preview_loader, model_, c_exp)
 
-            log_info.append("val: psnr={:.4f}".format(val_res))
-            c_exp.log_metric("L1 loss_Val", val_l1)
-            c_exp.log_metric("PSNR_Val", val_res)
+            log_info.append("val: psnr={val_res:.4f}")
+            c_exp.log_metric("L1 loss Val", val_l1)
+            c_exp.log_metric("PSNR Val", val_res)
             # writer.add_scalars('psnr', {'val': val_res}, epoch)
             if val_res > max_val_v:
                 max_val_v = val_res

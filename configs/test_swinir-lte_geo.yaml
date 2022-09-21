@@ -10,13 +10,14 @@ test_dataset:
     name: noddyverse_wrapper
     args:
       is_val: True
-      inp_size: 48
+      inp_size: 45
       scale_min: 4
       scale_max: 4
   batch_size: 1
 eval_type: noddyverse-4
 eval_bsize: 30000
 
+model_name: real_flux
 num_workers: 0
 rgb_range: 2 #noddyverse min max clip +-5000 to range [-1, 1]
 
