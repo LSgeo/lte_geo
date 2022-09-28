@@ -45,9 +45,10 @@ def save_pred(
     suffix="",
     scale=None,
     c_exp: comet_ml.Experiment = None,
+    extra="_",
 ):
     Path(save_path).mkdir(parents=True, exist_ok=True)
-    title = f"Magnetics_{suffix}_{scale}x.png"
+    title = f"Magnetics_{suffix}{extra}{scale}x.png"
     norm = Norm(clip=5000)
     lr = norm.inverse_mmc(lr.detach().cpu().squeeze().numpy())
     sr = norm.inverse_mmc(sr.detach().cpu().squeeze().numpy())
@@ -70,9 +71,12 @@ def save_pred(
         interpolation="nearest",
     )
 
-    fig, [axlr, axbc, axsr, axhr, axgt] = plt.subplots(1, 5, figsize=(26, 8))
+    fig, [
+        [axlr, axbc, axsr, axhr, axgt],
+        [axoff1, axdbc, axdsr, axoff2, axoff3],
+    ] = plt.subplots(2, 5, figsize=(20, 10))
     plt.suptitle(title)
-    
+
     axlr.set_title("LR")
     imlr = axlr.imshow(lr, **plt_args)
     plt.colorbar(mappable=imlr, ax=axlr, location="bottom")
@@ -80,24 +84,49 @@ def save_pred(
     axbc.set_title("Bicubic")
     imbc = axbc.imshow(bc, **plt_args)
     plt.colorbar(mappable=imbc, ax=axbc, location="bottom")
-    
+
     axsr.set_title("SR")
     imsr = axsr.imshow(sr, **plt_args)
     plt.colorbar(mappable=imsr, ax=axsr, location="bottom")
-    
+
     axhr.set_title("HR")
     imhr = axhr.imshow(hr, **plt_args)
     plt.colorbar(mappable=imhr, ax=axhr, location="bottom")
-    
+
     axgt.set_title("GT")
     plt_args.pop("vmin")
     plt_args.pop("vmax")
     plt_args["cmap"] = cc.cm.CET_L1
     imgt = axgt.imshow(gt, **plt_args)
     plt.colorbar(mappable=imgt, ax=axgt, location="bottom")
-    
+
+    for ax in [axoff1, axoff2, axoff3]:
+        ax.set_axis_off()
+
+    _dmax = max(
+        abs((hr - sr).min()),
+        abs((hr - sr).max()),
+        abs((hr - bc).min()),
+        abs((hr - bc).max()),
+    )
+
+    plt_args = dict(
+        cmap=cc.cm.CET_D7,
+        origin="lower",
+        interpolation="nearest",
+        vmin=-_dmax,
+        vmax=_dmax,
+    )
+    axdbc.set_title(f"axdbc")
+    imdbc = axdbc.imshow(hr - bc, **plt_args)
+    plt.colorbar(mappable=imdbc, ax=axdbc, location="bottom")
+
+    axdsr.set_title(f"axdsr")
+    imdsr = axdsr.imshow(hr - sr, **plt_args)
+    plt.colorbar(mappable=imdsr, ax=axdsr, location="bottom")
+
     # lr_ls = ["dataset"]["args"]["hr_line_spacing"] * scale
-    plt.savefig(Path(save_path) / title)
+    plt.savefig(Path(save_path) / (title))
     plt.close()
 
 
@@ -340,15 +369,17 @@ def process_custom_data():
                 heading=args["heading"],
             )
         )
-        dset.is_val = True
-        dset.scale = 2
+        dset.is_val = config["test_dataset"]["dataset"]["args"]["is_val"]
+        dset.scale = 4
         dsets.append(dset)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="configs/test_swinir-lte_geo.yaml")
-    parser.add_argument("--model", default="D:/luke/lte_geo/save/_train_swinir-lte_geo") # Specify dir containing model .pths
+    parser.add_argument(
+        "--model", default="D:/luke/lte_geo/save/_train_swinir-lte_geo"
+    )  # Specify dir containing model .pths
     parser.add_argument("--window", default="0")
     parser.add_argument("--scale_max", default="4")
     parser.add_argument("--fast", default=False)
@@ -366,7 +397,8 @@ if __name__ == "__main__":
     spec = config["test_dataset"]
     dataset = datasets.make(spec["dataset"])
     dataset = datasets.make(spec["wrapper"], args={"dataset": dataset})
-    dataset.is_val = True
+    dataset.is_val = spec["wrapper"]["args"]["is_val"]
+    # print(len(dataset))
 
     if True:  # config["show_scale_samples_not_eval"]:
         dataset = Subset(dataset, config["visually_nice_test_samples"])
@@ -381,9 +413,12 @@ if __name__ == "__main__":
 
     model_dir = Path(args.model)
     model_name = config["model_name"]
-    model_path = list(model_dir.glob(f"**/*{model_name}*.pth"))
-    assert len(model_path) == 1
-    model_path = model_path[0]
+    model_paths = list(model_dir.glob(f"**/*{model_name}*.pth"))
+    if not model_paths:
+        raise FileNotFoundError(
+            f"No model found in {model_dir} matching *{model_name}*.pth."
+        )
+    model_path = model_paths[0]
     # last_model = Path("D:/luke/lte_geo/save/_train_swinir-lte_geo/tensorboard")
     # last_model = sorted(list(last_model.iterdir()))[-1].stem
 
@@ -410,9 +445,10 @@ if __name__ == "__main__":
             rgb_range=config.get("rgb_range"),
             model_name=model_name,
             shave=6,
-            save_path=save_path
+            save_path=save_path,
         )
-        print( 
+        print(
             f"Model: {model_path.absolute()}\n"
             f"L1: {res[0]:.4f} PSNR: {res[1]:.4f}\n"
-            f"Saved to: {save_path}")
+            f"Saved to: {save_path}"
+        )

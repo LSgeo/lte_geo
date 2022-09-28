@@ -1,3 +1,11 @@
+model_name: beige_ottoman
+num_workers: 0
+rgb_range: 2 # noddyverse min max clip +-5000 to range [-1, 1]
+eval_type: noddyverse-4
+eval_bsize: 30000
+show_scale_samples_not_eval: False
+visually_nice_test_samples: [19, 59, 79, 86, 95, 116, 209, 265, 317, 319, 320,321,322,323,324,325,326,327,328,329,330,400,401,402,403,404,405,406,407,408,409,410,411,412,413,414,415]
+
 test_dataset:
   dataset:
     name: noddyverse_dataset
@@ -9,21 +17,11 @@ test_dataset:
   wrapper:
     name: noddyverse_wrapper
     args:
-      is_val: True
+      is_val: False
       inp_size: 45
       scale_min: 4
       scale_max: 4
   batch_size: 1
-eval_type: noddyverse-4
-eval_bsize: 30000
-
-model_name: real_flux
-num_workers: 0
-rgb_range: 2 #noddyverse min max clip +-5000 to range [-1, 1]
-
-show_scale_samples_not_eval: False
-visually_nice_test_samples: [19, 59, 79, 86, 95, 116, 209, 265, 317, 319]
-# 116 shows an example of classic line pattern rotation
 
 data_norm:
   inp: {sub: [0], div: [1]}
