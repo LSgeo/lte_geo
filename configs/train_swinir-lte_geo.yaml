@@ -5,7 +5,7 @@ dataset_grid_param:
   clip: 5000 # Min Max clip
 
 use_comet: True
-num_workers: 8 # ~4-8+ on 10900KF / 3090
+num_workers: 10 # ~6+ on 10900KF / 3090
 eval_type: noddyverse-4
 
 train_dataset:
@@ -14,7 +14,7 @@ train_dataset:
     args:
       root_path: D:/luke/Noddy_data/noddyverse_train_data
       repeat: 1
-      limit_length: 8000 #_000
+      limit_length: 40_000 #150_000 #196_533
       hr_line_spacing: 4 # array coords
       sample_spacing: 20 # spatial coords
       heading: NS
@@ -34,7 +34,7 @@ val_dataset:
     args:
       root_path: D:/luke/Noddy_data/noddyverse_val_data
       repeat: 1
-      limit_length: 1600 #_000
+      limit_length: 1_600 
       hr_line_spacing: 4
       sample_spacing: 20
       heading: NS
@@ -69,14 +69,14 @@ model:
 optimizer:
   name: adam
   args:
-    lr: 3.e-4
-epoch_max: 10
+    lr: 2.e-4
+epoch_max: 15
 multi_step_lr:
-  milestones: [1, 2, 3, 4, 5, 6, 7, 8]
+  milestones: [2,4,6,8,10,12,13,14]
   gamma: 0.5
 
 epoch_val: 1
-epoch_save: 9
+epoch_save: 1
 
 visually_nice_val_samples: [1, 18, 68, 93, 127, 147, 152, 156, 163, 183, 186, 204, 212, 236, 255, 263, 343, 390, 450, 460]
 
