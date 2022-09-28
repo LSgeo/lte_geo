@@ -1,12 +1,14 @@
 # modified from: https://github.com/yinboc/liif
 
 import argparse
+from datetime import datetime
 import os
 
 from comet_ml import Experiment
 import yaml
 import torch
 import torch.nn as nn
+from pathlib import Path
 from tqdm import tqdm
 from torch.utils.data import DataLoader, Subset
 from torch.optim.lr_scheduler import MultiStepLR
@@ -14,7 +16,7 @@ from torch.optim.lr_scheduler import MultiStepLR
 import datasets
 import models
 import utils
-from test import reshape
+from test import reshape, eval_psnr
 
 
 def make_data_loader(spec, tag=""):
@@ -28,7 +30,9 @@ def make_data_loader(spec, tag=""):
         dataset = Subset(dataset, config["visually_nice_val_samples"])
         bs = 1
         num_workers = 1
-        log(f"  Scale range: {dataset.dataset.scale_min} to {dataset.dataset.scale_max}")
+        log(
+            f"  Scale range: {dataset.dataset.scale_min} to {dataset.dataset.scale_max}"
+        )
     else:
         bs = spec["batch_size"]
         num_workers = config.get("num_workers")
@@ -206,18 +210,16 @@ def log_images(loader, model, c_exp: Experiment):
                         image_minmax=(_min, _max),
                     )
 
-    
-
 
 def main(config_, save_path):
-    from test import eval_psnr
-
     global config, log, writer, c_exp
     config = config_
-    log, writer = utils.set_save_path(save_path, remove=False)
-    with open(os.path.join(save_path, "config.yaml"), "w") as f:
-        yaml.dump(config, f, sort_keys=False)
     c_exp = Experiment(disabled=not config["use_comet"])
+    save_path = Path(save_path) / f'{datetime.now().strftime("%y%m%d-%H%M")}_{c_exp.get_name()}'
+    save_path.mkdir(exist_ok=False, parents=True)
+    log, writer = utils.set_save_path(save_path, remove=False)
+    with open(save_path / f"{c_exp.get_name()}_config.yaml", "w") as f:
+        yaml.dump(config, f, sort_keys=False)
 
     train_loader, val_loader, preview_loader = make_data_loaders()
     if config.get("data_norm") is None:
@@ -244,7 +246,7 @@ def main(config_, save_path):
 
     for epoch in range(epoch_start, epoch_max + 1):
         t_epoch_start = timer.t()
-        log_info = ["epoch {}/{}".format(epoch, epoch_max)]
+        log_info = [f"epoch {epoch}/{epoch_max}"]
         c_exp.set_epoch(epoch)
 
         writer.add_scalar("lr", optimizer.param_groups[0]["lr"], epoch)
@@ -254,7 +256,7 @@ def main(config_, save_path):
         if lr_scheduler is not None:
             lr_scheduler.step()
 
-        log_info.append("train: loss={:.4f}".format(train_loss))
+        log_info.append(f"train: loss={train_loss:.4f}")
         c_exp.log_metric("L1 loss Train", train_loss)
         # writer.add_scalars('loss', {'train': train_loss}, epoch)
 
@@ -268,11 +270,10 @@ def main(config_, save_path):
         optimizer_spec["sd"] = optimizer.state_dict()
         sv_file = {"model": model_spec, "optimizer": optimizer_spec, "epoch": epoch}
 
-        torch.save(sv_file, os.path.join(save_path, f"{c_exp.get_name()}_epoch-last.pth"))
-        
+        torch.save(sv_file, save_path / f"{c_exp.get_name()}_epoch-last.pth")
 
         if (epoch_save is not None) and (epoch % epoch_save == 0):
-            torch.save(sv_file, os.path.join(save_path, f"{c_exp.get_name()}_epoch-{epoch}.pth"))
+            torch.save(sv_file, save_path / f"{c_exp.get_name()}_epoch-{epoch}.pth")
 
         if (epoch_val is not None) and (epoch % epoch_val == 0):
             if n_gpus > 1 and (config.get("eval_bsize") is not None):
@@ -290,22 +291,19 @@ def main(config_, save_path):
 
             log_images(preview_loader, model_, c_exp)
 
-            log_info.append("val: psnr={val_res:.4f}")
+            log_info.append(f"val: psnr={val_res:.4f}")
             c_exp.log_metric("L1 loss Val", val_l1)
             c_exp.log_metric("PSNR Val", val_res)
             # writer.add_scalars('psnr', {'val': val_res}, epoch)
             if val_res > max_val_v:
                 max_val_v = val_res
-                torch.save(
-                    sv_file,
-                    os.path.join(save_path, f"{c_exp.get_name()}_epoch-best.pth"),
-                )
+                torch.save(sv_file, save_path / f"{c_exp.get_name()}_epoch-best.pth")
 
         t = timer.t()
         prog = (epoch - epoch_start + 1) / (epoch_max - epoch_start + 1)
         t_epoch = utils.time_text(t - t_epoch_start)
         t_elapsed, t_all = utils.time_text(t), utils.time_text(t / prog)
-        log_info.append("{} {}/{}".format(t_epoch, t_elapsed, t_all))
+        log_info.append(f"{t_epoch} {t_elapsed}/{t_all}")
 
         log(", ".join(log_info))
         writer.flush()
@@ -352,7 +350,7 @@ if __name__ == "__main__":
 
     with open(args.config, "r") as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
-        print("config loaded.")
+        print(f"Config loaded from {args.config}")
 
     save_name = args.name
     if save_name is None:

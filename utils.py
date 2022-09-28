@@ -73,10 +73,10 @@ def ensure_path(path, remove=True):
 
 
 def set_save_path(save_path, remove=True):
-    ensure_path(save_path, remove=remove)
+    # ensure_path(save_path, remove=remove)
     set_log_path(save_path)
     writer = SummaryWriter(
-        os.path.join(save_path, f'tensorboard/{datetime.now().strftime("%y%m%d-%H%M")}')
+        os.path.join(save_path, 'tensorboard')
     )
     return log, writer
 
