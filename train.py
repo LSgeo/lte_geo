@@ -287,6 +287,7 @@ def main(config_, save_path):
                 eval_type=config.get("eval_type"),
                 eval_bsize=config.get("eval_bsize"),
                 c_exp=c_exp,
+                shave=6,
             )
 
             log_images(preview_loader, model_, c_exp)
