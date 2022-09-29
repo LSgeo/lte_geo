@@ -413,7 +413,7 @@ if __name__ == "__main__":
 
     model_dir = Path(args.model)
     model_name = config["model_name"]
-    model_paths = list(model_dir.glob(f"**/*{model_name}*.pth"))
+    model_paths = list(model_dir.glob(f"**/*{model_name}*best.pth"))
     if not model_paths:
         raise FileNotFoundError(
             f"No model found in {model_dir} matching *{model_name}*.pth."
@@ -429,7 +429,7 @@ if __name__ == "__main__":
 
     if config["show_scale_samples_not_eval"]:
         single_sample_scale_range(
-            loader, model, scales=[1, 2, 3, 4, 6], model_name=model_name
+            loader, model, scales=[1, 2, 3, 4], model_name=model_name
         )
     else:
         res = eval_psnr(
