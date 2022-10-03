@@ -37,7 +37,7 @@ class HRLRNoddyverse(NoddyDataset):
         kwargs["model_dir"] = root_path
         self.scale = None  # init params
         self.inp_size = None
-        self.is_val = None  # set after wrapper
+        self.crop = None  # set after wrapper
         super().__init__(**kwargs)
 
     def __len__(self):
@@ -103,7 +103,7 @@ class HRLRNoddyverse(NoddyDataset):
         return np.expand_dims(grid, 0)  # add channel dimension
 
     def _crop(self, grid, extent, scale):
-        if self.is_val:
+        if not self.crop:
             return grid
         else:
             lr_e = extent[0] * scale
@@ -202,7 +202,7 @@ class NoddyverseWrapper(Dataset):
         scale_max=None,
         augment=False,
         sample_q=None,
-        is_val=False,
+        crop=False,
     ):
         self.dataset = dataset
         self.dataset.inp_size = inp_size
@@ -211,13 +211,13 @@ class NoddyverseWrapper(Dataset):
         self.scale_max = scale_max or scale_min  # if not scale_max...
         self.augment = augment
         self.sample_q = sample_q  # clip hr samples to same length
-        self.is_val = is_val
+        self.crop = crop
 
     def __len__(self):
         return len(self.dataset)
 
     def __getitem__(self, index):
-        self.dataset.is_val = self.is_val
+        self.dataset.crop = self.crop
         self.dataset.scale = int(self.scale)
         data = self.dataset[index]
 

@@ -21,7 +21,7 @@ train_dataset:
   wrapper:
     name: noddyverse_wrapper
     args:
-      is_val: False
+      crop: False
       inp_size: 45 # LR input size
       scale_min: 4
       scale_max: 4 # max 4 with no other changes. up to 10, hardcoded to exclude 7
@@ -41,7 +41,7 @@ val_dataset:
   wrapper:
     name: noddyverse_wrapper
     args:
-      is_val: False # Now used as a flag for croppping to inp_size or not.
+      crop: False # Now used as a flag for croppping to inp_size or not.
       inp_size: 45
       scale_min: 4 
       scale_max: 4

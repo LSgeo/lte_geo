@@ -19,7 +19,7 @@ test_dataset:
   wrapper:
     name: noddyverse_wrapper
     args:
-      is_val: False
+      crop: False
       inp_size: 60
       scale_min: 3
       scale_max: 3
