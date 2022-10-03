@@ -1,3 +1,6 @@
+if 0 and __name__ == "__main__":
+    assert False, "Use inference.py instead"
+
 import argparse
 import os
 import math
@@ -41,6 +44,7 @@ def save_pred(
     sr,
     hr,
     gt_index,
+    root_path="D:/luke/Noddy_data/noddyverse_test_data",
     save_path="",
     suffix="",
     scale=None,
@@ -48,14 +52,14 @@ def save_pred(
     extra="_",
 ):
     Path(save_path).mkdir(parents=True, exist_ok=True)
-    title = f"Magnetics_{suffix}{extra}{scale}x.png"
+    title = f"TMI_{suffix}{extra}{scale}x.png"
     norm = Norm(clip=5000)
-    lr = norm.inverse_mmc(lr.detach().cpu().squeeze().numpy())
-    sr = norm.inverse_mmc(sr.detach().cpu().squeeze().numpy())
-    hr = norm.inverse_mmc(hr.detach().cpu().squeeze().numpy())
+    lr = norm.inverse_mmc(lr)
+    sr = norm.inverse_mmc(sr)
+    hr = norm.inverse_mmc(hr)
     bc = np.array(Image.fromarray(lr).resize(hr.shape, Image.Resampling.BICUBIC))
 
-    gt_list = Path(spec["dataset"]["args"]["root_path"])
+    gt_list = Path(root_path)
     gt_list = [Path(str(p)[:-3]) for p in gt_list.glob("**/*.mag.gz")]
     gt = next(parse_geophysics(gt_list[gt_index], mag=True))
 
@@ -79,26 +83,26 @@ def save_pred(
 
     axlr.set_title("LR")
     imlr = axlr.imshow(lr, **plt_args)
-    plt.colorbar(mappable=imlr, ax=axlr, location="bottom")
+    plt.colorbar(mappable=imlr, ax=axlr, label="nT", location="bottom")
 
     axbc.set_title("Bicubic")
     imbc = axbc.imshow(bc, **plt_args)
-    plt.colorbar(mappable=imbc, ax=axbc, location="bottom")
+    plt.colorbar(mappable=imbc, ax=axbc, label="nT", location="bottom")
 
     axsr.set_title("SR")
     imsr = axsr.imshow(sr, **plt_args)
-    plt.colorbar(mappable=imsr, ax=axsr, location="bottom")
+    plt.colorbar(mappable=imsr, ax=axsr, label="nT", location="bottom")
 
     axhr.set_title("HR")
     imhr = axhr.imshow(hr, **plt_args)
-    plt.colorbar(mappable=imhr, ax=axhr, location="bottom")
+    plt.colorbar(mappable=imhr, ax=axhr, label="nT", location="bottom")
 
     axgt.set_title("GT")
     plt_args.pop("vmin")
     plt_args.pop("vmax")
     plt_args["cmap"] = cc.cm.CET_L1
     imgt = axgt.imshow(gt, **plt_args)
-    plt.colorbar(mappable=imgt, ax=axgt, location="bottom")
+    plt.colorbar(mappable=imgt, ax=axgt, label="nT", location="bottom")
 
     for ax in [axoff1, axoff2, axoff3]:
         ax.set_axis_off()
@@ -117,13 +121,13 @@ def save_pred(
         vmin=-_dmax,
         vmax=_dmax,
     )
-    axdbc.set_title(f"axdbc")
+    axdbc.set_title(f"HR - BC")
     imdbc = axdbc.imshow(hr - bc, **plt_args)
-    plt.colorbar(mappable=imdbc, ax=axdbc, location="bottom")
+    plt.colorbar(mappable=imdbc, ax=axdbc, label="$\delta$nT", location="bottom")
 
-    axdsr.set_title(f"axdsr")
+    axdsr.set_title(f"HR - SR")
     imdsr = axdsr.imshow(hr - sr, **plt_args)
-    plt.colorbar(mappable=imdsr, ax=axdsr, location="bottom")
+    plt.colorbar(mappable=imdsr, ax=axdsr, label="$\delta$nT", location="bottom")
 
     # lr_ls = ["dataset"]["args"]["hr_line_spacing"] * scale
     plt.savefig(Path(save_path) / (title))
@@ -157,29 +161,21 @@ def eval_psnr(
     gt_sub = torch.FloatTensor(t["sub"]).view(1, 1, -1).cuda()
     gt_div = torch.FloatTensor(t["div"]).view(1, 1, -1).cuda()
 
-    if eval_type is None:
-        metric_fn = utils.calc_psnr
-    elif eval_type.startswith("div2k"):
-        scale = int(eval_type.split("-")[1])
-        metric_fn = partial(utils.calc_psnr, dataset="div2k", scale=scale)
-    elif eval_type.startswith("benchmark"):
-        scale = int(eval_type.split("-")[1])
-        metric_fn = partial(utils.calc_psnr, dataset="benchmark", scale=scale)
-    elif eval_type.startswith("noddy"):
-        scale = int(eval_type.split("-")[1])
-        metric_fn = partial(
-            utils.calc_psnr,
-            dataset="noddyverse",
-            scale=scale,
-            rgb_range=rgb_range,
-            shave=shave,
-        )
-        loader.dataset.scale = scale
-        if __name__ == "__main__":
-            loader.dataset.scale_min = scale
-            loader.dataset.scale_max = scale
-    else:
-        raise NotImplementedError
+    scale = int(eval_type.split("-")[1])
+    metric_fn = partial(
+        utils.calc_psnr,
+        dataset="noddyverse",
+        scale=scale,
+        rgb_range=rgb_range,
+        shave=shave,
+    )
+
+    loader.dataset.scale = scale
+    loader.dataset.dataset.scale = scale
+
+    if __name__ == "__main__":
+        loader.dataset.scale_min = scale
+        loader.dataset.scale_max = scale
 
     l1_fn = torch.nn.L1Loss()
     l1_res = utils.Averager()
@@ -238,19 +234,19 @@ def eval_psnr(
 
             if __name__ == "__main__":
                 save_pred(
-                    lr=batch["inp"],
-                    sr=pred,
-                    hr=batch["gt"],
-                    gt_index=config["visually_nice_test_samples"][i],
+                    lr=batch["inp"].detach().cpu().squeeze().numpy(),
+                    hr=batch["gt"].detach().cpu().squeeze().numpy(),
+                    sr=pred.detach().cpu().squeeze().numpy(),
+                    gt_index=config["plot_samples"][i],
                     save_path=save_path,
-                    suffix=config["visually_nice_test_samples"][i],
+                    suffix=config["plot_samples"][i],
                     scale=scale,
                     c_exp=c_exp,
                 )
 
-        res = metric_fn(pred, batch["gt"])
         l1_metric = l1_fn(pred, batch["gt"])
-        l1_res.add(l1_metric.detach().cpu().numpy(), inp.shape[0])
+        l1_res.add(l1_metric.item(), inp.shape[0])
+        res = metric_fn(pred, batch["gt"])
         val_res.add(res.item(), inp.shape[0])
 
         if verbose:
@@ -277,7 +273,7 @@ def reshape(batch, h_pad, w_pad, coord, pred):
     return pred, batch
 
 
-def single_sample_scale_range(loader, model, scales=[1, 2, 3, 4], model_name=""):
+def plot_scale_range(loader, model, scales=[1, 2, 3, 4], model_name=""):
     model.eval()
     pbar = tqdm(scales, leave=False, desc="scale_vis")
 
@@ -311,68 +307,6 @@ def single_sample_scale_range(loader, model, scales=[1, 2, 3, 4], model_name="")
             )
 
 
-def process_custom_data():
-    """Run model on custom samples not in existing Dataset
-    For now, processes Naprstek synthetic test sample.
-    """
-    from datasets.noddyverse import HRLRNoddyverse, NoddyverseWrapper
-    from datasets.noddyverse import load_naprstek_synthetic as load_ns
-
-    class CustomTestDataset(HRLRNoddyverse):
-        def __init__(self, name, sample, **kwargs):
-            self.name = name
-            self.sample = sample
-            self.crop_extent = 600
-            self.inp_size = 600
-            self.sp = {
-                "hr_line_spacing": kwargs.get("hr_line_spacing", 1),
-                "sample_spacing": kwargs.get("sample_spacing", 20),
-                "heading": kwargs.get("heading", None),  # Default will be random
-            }
-
-        def _process(self, index):
-            self.data = {}
-            self.data["gt_grid"] = self.sample
-            hls = self.sp["hr_line_spacing"]
-            lls = int(hls * self.scale)
-            hr_x, hr_y, hr_z = self._subsample(self.data["gt_grid"], hls)
-            lr_x, lr_y, lr_z = self._subsample(self.data["gt_grid"], lls)
-            # lr dimension: self.inp_size
-            sample_crop_extent = self.crop_extent
-            lr_exent = int((sample_crop_extent / self.scale) * 4)  # cs_fac = 4
-            lr_e = int(torch.randint(low=0, high=lr_exent - 600, size=(1,)))
-            lr_n = int(torch.randint(low=0, high=lr_exent - 600, size=(1,)))
-            # Note - we use scale here as a factor describing how big HR is x LR.
-            # This diverges from what my brain apparently normally does ().
-            self.data["hr_grid"] = self._grid(
-                hr_x, hr_y, hr_z, scale=self.scale, ls=hls, lr_e=lr_e, lr_n=lr_n
-            )
-            self.data["lr_grid"] = self._grid(
-                lr_x, lr_y, lr_z, scale=1, ls=lls, lr_e=lr_e, lr_n=lr_n
-            )
-
-    synth = {
-        "naprstek": load_ns(
-            root="D:/luke/Noddy_data/test",
-            data_txt_file="Naprstek_BaseModel1-AllValues-1nTNoise.txt",
-        ),
-    }
-    dsets = []
-    for name, sample in synth.items():
-        args = config["test_dataset"]["dataset"]["args"]
-        dset = NoddyverseWrapper(
-            CustomTestDataset(
-                name,
-                sample,
-                hr_line_spacing=args["hr_line_spacing"],
-                sample_spacing=args["sample_spacing"],
-                heading=args["heading"],
-            )
-        )
-        dset.is_val = config["test_dataset"]["dataset"]["args"]["is_val"]
-        dset.scale = 4
-        dsets.append(dset)
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -397,11 +331,11 @@ if __name__ == "__main__":
     spec = config["test_dataset"]
     dataset = datasets.make(spec["dataset"])
     dataset = datasets.make(spec["wrapper"], args={"dataset": dataset})
-    dataset.is_val = spec["wrapper"]["args"]["is_val"]
     # print(len(dataset))
+    dataset.crop = spec["wrapper"]["args"]["crop"]
 
-    if True:  # config["show_scale_samples_not_eval"]:
-        dataset = Subset(dataset, config["visually_nice_test_samples"])
+    if config["limit_to_plots"]:
+        dataset = Subset(dataset, config["plot_samples"])
 
     loader = DataLoader(
         dataset,
@@ -414,9 +348,9 @@ if __name__ == "__main__":
     model_dir = Path(args.model)
     model_name = config["model_name"]
     model_paths = list(model_dir.glob(f"**/*{model_name}*best.pth"))
-    if not model_paths:
+    if len(model_paths) != 1:
         raise FileNotFoundError(
-            f"No model found in {model_dir} matching *{model_name}*.pth."
+            f"No unique model found in {model_dir} for *{model_name}*best.pth. Refine search."
         )
     model_path = model_paths[0]
     # last_model = Path("D:/luke/lte_geo/save/_train_swinir-lte_geo/tensorboard")
@@ -427,10 +361,8 @@ if __name__ == "__main__":
 
     save_path = Path(f"inference/{model_name}")
 
-    if config["show_scale_samples_not_eval"]:
-        single_sample_scale_range(
-            loader, model, scales=[1, 2, 3, 4], model_name=model_name
-        )
+    if config["scale_range"]:
+        plot_scale_range(loader, model, scales=[1, 2, 3, 4], model_name=model_name)
     else:
         res = eval_psnr(
             loader,

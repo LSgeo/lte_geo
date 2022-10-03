@@ -27,7 +27,7 @@ def make_data_loader(spec, tag=""):
     dataset = datasets.make(spec["wrapper"], args={"dataset": dataset})
     log(f"{tag} dataset:")
     if "preview" in tag:
-        dataset = Subset(dataset, config["visually_nice_val_samples"])
+        dataset = Subset(dataset, config["plot_samples"])
         bs = 1
         num_workers = 1
         log(
@@ -215,7 +215,9 @@ def main(config_, save_path):
     global config, log, writer, c_exp
     config = config_
     c_exp = Experiment(disabled=not config["use_comet"])
-    save_path = Path(save_path) / f'{datetime.now().strftime("%y%m%d-%H%M")}_{c_exp.get_name()}'
+    save_path = (
+        Path(save_path) / f'{datetime.now().strftime("%y%m%d-%H%M")}_{c_exp.get_name()}'
+    )
     save_path.mkdir(exist_ok=False, parents=True)
     log, writer = utils.set_save_path(save_path, remove=False)
     with open(save_path / f"{c_exp.get_name()}_config.yaml", "w") as f:
