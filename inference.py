@@ -18,23 +18,24 @@ from mlnoddy.datasets import parse_geophysics, Norm
 
 
 def main():
-    ### Load Model ###
+    # Load Model ###
     model_dir = Path(cfg["model_dir"])
     model_name = cfg["model_name"]
     model_paths = list(model_dir.glob(f"**/*{model_name}*best.pth"))
     if len(model_paths) != 1:
         raise FileNotFoundError(
-            f"No unique model found in {model_dir} for *{model_name}*best.pth. Refine search."
+            f"No unique model found in {model_dir} for *{model_name}*best.pth."
         )
 
     model_spec = torch.load(model_paths[0])["model"]
     model = models.make(model_spec, load_sd=True).cuda()
 
-    ### Define Data ###
+    # Define Data ###
     spec = cfg["test_dataset"]
     dataset = datasets.make(spec["dataset"])
     dataset = datasets.make(spec["wrapper"], args={"dataset": dataset})
-    # dataset.crop = spec["wrapper"]["args"]["crop"] # this should now be handled in .make()
+    # dataset.crop = spec["wrapper"]["args"]["crop"]
+    # ^ this should now be handled in .make()
 
     if cfg["limit_to_plots"]:
         dataset = Subset(dataset, cfg["plot_samples"])
@@ -47,7 +48,7 @@ def main():
         pin_memory=True,
     )
 
-    ### Pack Options ###
+    # Pack Options ###
     opts = dict(
         model_name=model_name,
         model_path=model_paths[0],
@@ -102,8 +103,10 @@ def main():
                 )
             )
 
-        # if cfg["custom_grids"]:
-        #     test_custom_data(model, scale, cfg, opts)
+    plt_results(results_dict, opts)
+    plt_results(custom_results_dict, opts)
+
+    return results_dict
 
 
 def eval(model, scale, loader, opts):
@@ -128,10 +131,8 @@ def eval(model, scale, loader, opts):
         batch["gt"] = batch["gt"].to("cuda", non_blocking=True)
 
         with torch.no_grad():
-            if opts["cfg"]["eval_bsize"]:
-                pred = batched_predict(
-                    model, inp, coord, cell, opts["cfg"]["eval_bsize"]
-                )
+            if cfg["eval_bsize"]:
+                pred = batched_predict(model, inp, coord, cell, cfg["eval_bsize"])
             else:
                 pred = model(inp, coord, cell)
 
@@ -143,13 +144,21 @@ def eval(model, scale, loader, opts):
         psnr_avg.add(psnr.item(), inp.shape[0])
 
         pbar.set_description(
-            f"Test (Mean): L1:{l1_avg.item():.4f}, PSNR:{psnr_avg.item():.4f}"
+            f"Mean: L1: {l1_avg.item():.4f}, PSNR: {psnr_avg.item():.4f}"
         )
 
-        if opts["cfg"]["limit_to_plots"]:
+        if cfg["limit_to_plots"]:
             lr = batch["inp"].detach().cpu().squeeze().numpy()
             hr = batch["gt"].detach().cpu().squeeze().numpy()
             sr = pred.detach().cpu().squeeze().numpy()
+
+            suffix = opts["ids"][i]
+            if opts.get("gt") is not None:
+                gt = opts["gt"].squeeze()
+            else:
+                gt_list = Path(cfg["test_dataset"]["dataset"]["args"]["root_path"])
+                gt_list = [Path(str(p)[:-3]) for p in gt_list.glob("**/*.mag.gz")]
+                gt = next(parse_geophysics(gt_list[opts["ids"][i]], mag=True))
 
             save_pred(
                 lr=lr,
@@ -264,18 +273,31 @@ def save_pred(
     )
     plt.close()
 
-#     class CustomTestDataset(HRLRNoddyverse):
-#         def __init__(self, name, sample, **kwargs):
-#             self.name = name
-#             self.sample = sample
-#             self.inp_size = kwargs.get("inp_size")
-#             self.crop_extent = kwargs.get("crop_extent")
-#             self.crop = bool(self.crop_extent)
-#             self.sp = {
-#                 "hr_line_spacing": kwargs.get("hr_line_spacing", 1),
-#                 "sample_spacing": kwargs.get("sample_spacing", 20),
-#                 "heading": kwargs.get("heading", "NS"),  # "EW"
-#             }
+
+def plt_results(results, opts):
+    """Plot scatter plot of performance metrics for each scale factor."""
+    nlp = np.array(
+        [
+            (i[0][0], i[1]["L1"], i[1]["PSNR"])
+            for i in list([k, v] for k, v in results.items())
+        ],
+        dtype=float,
+    )
+
+    fig, ax1 = plt.subplots()
+    ax2 = ax1.twinx()
+    plt.title(f"{opts['set']} set scale-averaged metrics")
+    ax1.set_xlabel("Scale Factor")
+    ax1.plot(nlp[:, 0], nlp[:, 2], "r-")
+    ax2.plot(nlp[:, 0], nlp[:, 1], "b--")
+    ax1.set_ylabel("PSNR", color="red")
+    ax2.set_ylabel("Mean Absolute Error", color="blue")
+    # ax2.invert_yaxis()
+    plt.savefig(
+        Path(opts["save_path"]) / f"0_Scale_Averaged_Metrics_{opts['set']}.png",
+        dpi=300,
+    )
+
 
 def test_custom_data(model, scale, opts):
     """Run model on custom samples not in existing Dataset
@@ -362,4 +384,4 @@ if __name__ == "__main__":
     with open("configs/inference.yaml", "r") as f:
         cfg = yaml.load(f, Loader=yaml.FullLoader)
 
-    main()
+    results = main()
