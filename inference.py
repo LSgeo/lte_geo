@@ -1,15 +1,20 @@
 from functools import partial
 from pathlib import Path
 
+import colorcet as cc
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import yaml
+from PIL import Image
 from torch.utils.data import DataLoader, Subset
 from tqdm.auto import tqdm
 
 import datasets
 import models
 import utils
-from test import save_pred, reshape, batched_predict
+from test import reshape, batched_predict
+from mlnoddy.datasets import parse_geophysics, Norm
 
 
 def main():
@@ -129,11 +134,10 @@ def eval(model, scale, loader, opts):
                 lr=lr,
                 hr=hr,
                 sr=sr,
+                gt=gt,
                 scale=scale,
-                gt_index=opts["cfg"]["plot_samples"][i],
-                root_path=opts["cfg"]["test_dataset"]["dataset"]["args"]["root_path"],
                 save_path=opts["save_path"],
-                suffix=opts["cfg"]["plot_samples"][i],
+                suffix=suffix,
             )
 
     return {
@@ -142,12 +146,102 @@ def eval(model, scale, loader, opts):
     }
 
 
-# def test_custom_data(model, cfg, opts):
-#     """Run model on custom samples not in existing Dataset
-#     For now, processes Naprstek synthetic test sample.
-#     """
-#     from datasets.noddyverse import HRLRNoddyverse, NoddyverseWrapper
-#     from datasets.noddyverse import load_naprstek_synthetic as load_naprstek
+def save_pred(
+    lr,
+    sr,
+    hr,
+    gt,
+    save_path="",
+    suffix="",
+    scale=None,
+    # c_exp: comet_ml.Experiment = None,
+    extra="_",
+):
+    Path(save_path).mkdir(parents=True, exist_ok=True)
+    title = f"TMI_{suffix}{extra}{scale}x.png"
+    norm = Norm(clip=5000)
+    lr = norm.inverse_mmc(lr)
+    sr = norm.inverse_mmc(sr)
+    hr = norm.inverse_mmc(hr)
+    bc = np.array(Image.fromarray(lr).resize(hr.shape, Image.Resampling.BICUBIC))
+
+    # _min, _max = (norm.min,  norm.max)
+    _min, _max = (hr.min(), hr.max())
+    # _min, _max = (gt.min(), gt.max())
+
+    plt_args = dict(
+        vmin=_min,
+        vmax=_max,
+        cmap=cc.cm.CET_L8,
+        # vmin=-20,
+        # vmax=40,
+        # cmap=cc.cm.CET_R1,
+        origin="lower",
+        interpolation="nearest",
+    )
+
+    fig, [
+        [axlr, axbc, axsr, axhr, axgt],
+        [axoff1, axdbc, axdsr, axoff2, axoff3],
+    ] = plt.subplots(2, 5, figsize=(20, 10))
+    plt.suptitle(title)
+
+    axlr.set_title("LR")
+    imlr = axlr.imshow(lr, **plt_args)
+    plt.colorbar(mappable=imlr, ax=axlr, label="nT", location="bottom")
+
+    axbc.set_title("Bicubic")
+    imbc = axbc.imshow(bc, **plt_args)
+    plt.colorbar(mappable=imbc, ax=axbc, label="nT", location="bottom")
+
+    axsr.set_title("SR")
+    imsr = axsr.imshow(sr, **plt_args)
+    plt.colorbar(mappable=imsr, ax=axsr, label="nT", location="bottom")
+
+    axhr.set_title("HR")
+    imhr = axhr.imshow(hr, **plt_args)
+    plt.colorbar(mappable=imhr, ax=axhr, label="nT", location="bottom")
+
+    axgt.set_title("GT")
+    plt_args.pop("vmin")
+    plt_args.pop("vmax")
+    plt_args["cmap"] = cc.cm.CET_L1
+    imgt = axgt.imshow(gt, **plt_args)
+    axgt.vlines(range(0, gt.shape[1], scale), 0, gt.shape[0], color="r", linewidth=1)
+    axgt.set_ylim(0, gt.shape[0])
+    plt.colorbar(mappable=imgt, ax=axgt, label="nT", location="bottom")
+
+    for ax in [axoff1, axoff2, axoff3]:
+        ax.set_axis_off()
+
+    _dmax = max(
+        # abs((hr - sr).min()),
+        # abs((hr - sr).max()),
+        abs((hr - bc).min()),
+        abs((hr - bc).max()),
+    )
+
+    plt_args = dict(
+        cmap=cc.cm.CET_D7,
+        origin="lower",
+        interpolation="nearest",
+        vmin=-_dmax,
+        vmax=_dmax,
+    )
+    axdbc.set_title(f"HR - BC")
+    imdbc = axdbc.imshow(hr - bc, **plt_args)
+    plt.colorbar(mappable=imdbc, ax=axdbc, label=r"$\Delta$nT", location="bottom")
+
+    axdsr.set_title(f"HR - SR")
+    imdsr = axdsr.imshow(hr - sr, **plt_args)
+    plt.colorbar(mappable=imdsr, ax=axdsr, label=r"$\Delta$nT", location="bottom")
+
+    # lr_ls = ["dataset"]["args"]["hr_line_spacing"] * scale
+    plt.savefig(
+        Path(save_path) / (title),
+        dpi=300,
+    )
+    plt.close()
 
 #     class CustomTestDataset(HRLRNoddyverse):
 #         def __init__(self, name, sample, **kwargs):

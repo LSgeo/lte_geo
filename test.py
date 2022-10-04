@@ -39,101 +39,6 @@ def batched_predict(model, inp, coord, cell, bsize):
     return pred
 
 
-def save_pred(
-    lr,
-    sr,
-    hr,
-    gt_index,
-    root_path="D:/luke/Noddy_data/noddyverse_test_data",
-    save_path="",
-    suffix="",
-    scale=None,
-    c_exp: comet_ml.Experiment = None,
-    extra="_",
-):
-    Path(save_path).mkdir(parents=True, exist_ok=True)
-    title = f"TMI_{suffix}{extra}{scale}x.png"
-    norm = Norm(clip=5000)
-    lr = norm.inverse_mmc(lr)
-    sr = norm.inverse_mmc(sr)
-    hr = norm.inverse_mmc(hr)
-    bc = np.array(Image.fromarray(lr).resize(hr.shape, Image.Resampling.BICUBIC))
-
-    gt_list = Path(root_path)
-    gt_list = [Path(str(p)[:-3]) for p in gt_list.glob("**/*.mag.gz")]
-    gt = next(parse_geophysics(gt_list[gt_index], mag=True))
-
-    # _min, _max = (norm.min,  norm.max)
-    _min, _max = (hr.min(), hr.max())
-    # _min, _max = (gt.min(), gt.max())
-
-    plt_args = dict(
-        vmin=_min,
-        vmax=_max,
-        cmap=cc.cm.CET_L8,
-        origin="lower",
-        interpolation="nearest",
-    )
-
-    fig, [
-        [axlr, axbc, axsr, axhr, axgt],
-        [axoff1, axdbc, axdsr, axoff2, axoff3],
-    ] = plt.subplots(2, 5, figsize=(20, 10))
-    plt.suptitle(title)
-
-    axlr.set_title("LR")
-    imlr = axlr.imshow(lr, **plt_args)
-    plt.colorbar(mappable=imlr, ax=axlr, label="nT", location="bottom")
-
-    axbc.set_title("Bicubic")
-    imbc = axbc.imshow(bc, **plt_args)
-    plt.colorbar(mappable=imbc, ax=axbc, label="nT", location="bottom")
-
-    axsr.set_title("SR")
-    imsr = axsr.imshow(sr, **plt_args)
-    plt.colorbar(mappable=imsr, ax=axsr, label="nT", location="bottom")
-
-    axhr.set_title("HR")
-    imhr = axhr.imshow(hr, **plt_args)
-    plt.colorbar(mappable=imhr, ax=axhr, label="nT", location="bottom")
-
-    axgt.set_title("GT")
-    plt_args.pop("vmin")
-    plt_args.pop("vmax")
-    plt_args["cmap"] = cc.cm.CET_L1
-    imgt = axgt.imshow(gt, **plt_args)
-    plt.colorbar(mappable=imgt, ax=axgt, label="nT", location="bottom")
-
-    for ax in [axoff1, axoff2, axoff3]:
-        ax.set_axis_off()
-
-    _dmax = max(
-        abs((hr - sr).min()),
-        abs((hr - sr).max()),
-        abs((hr - bc).min()),
-        abs((hr - bc).max()),
-    )
-
-    plt_args = dict(
-        cmap=cc.cm.CET_D7,
-        origin="lower",
-        interpolation="nearest",
-        vmin=-_dmax,
-        vmax=_dmax,
-    )
-    axdbc.set_title(f"HR - BC")
-    imdbc = axdbc.imshow(hr - bc, **plt_args)
-    plt.colorbar(mappable=imdbc, ax=axdbc, label="$\delta$nT", location="bottom")
-
-    axdsr.set_title(f"HR - SR")
-    imdsr = axdsr.imshow(hr - sr, **plt_args)
-    plt.colorbar(mappable=imdsr, ax=axdsr, label="$\delta$nT", location="bottom")
-
-    # lr_ls = ["dataset"]["args"]["hr_line_spacing"] * scale
-    plt.savefig(Path(save_path) / (title))
-    plt.close()
-
-
 def eval_psnr(
     loader,
     model,
@@ -305,7 +210,6 @@ def plot_scale_range(loader, model, scales=[1, 2, 3, 4], model_name=""):
                 suffix=config["visually_nice_test_samples"][i],
                 scale=scale,
             )
-
 
 
 if __name__ == "__main__":
