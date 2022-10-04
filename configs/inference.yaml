@@ -14,13 +14,14 @@ test_dataset:
     args:
       root_path: D:/luke/Noddy_data/noddyverse_test_data
       hr_line_spacing: 4 # 4, so gridded shape is same as gt.
-      sample_spacing: 20
+      sample_spacing: 1
       heading: NS
+      norm: 5000 # NotImplemented - TODO, norm, unnorm instantiation
   wrapper:
     name: noddyverse_wrapper
     args:
       crop: False
       inp_size: 45
       scale_min: 2
-      scale_max: 4
+      scale_max: 9
   batch_size: 1

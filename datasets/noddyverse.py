@@ -31,12 +31,12 @@ class HRLRNoddyverse(NoddyDataset):
     ):
         self.sp = {
             "hr_line_spacing": kwargs.get("hr_line_spacing", 1),
-            "sample_spacing": kwargs.get("sample_spacing", 20),
+            "sample_spacing": kwargs.get("sample_spacing", 1),
             "heading": kwargs.get("heading", None),  # Default will be random
         }
         kwargs["model_dir"] = root_path
         self.scale = None  # init params
-        self.inp_size = None
+        self.inp_size = kwargs.get("input_size", None)  # set in super init?
         self.crop = None  # set after wrapper
         super().__init__(**kwargs)
 
@@ -46,7 +46,7 @@ class HRLRNoddyverse(NoddyDataset):
     def _subsample(self, raster, ls):
         """Select points from raster according to line spacing"""
         # input_cell_size = 20 # Noddyverse cell size is 20 m
-        ss = 1  # Sample all (every 1) points along line
+        ss = self.sp["sample_spacing"]  # Sample every n points along line
 
         xx, yy = np.meshgrid(
             np.arange(raster.shape[-1]),  # x, cols
@@ -128,6 +128,24 @@ class HRLRNoddyverse(NoddyDataset):
         self.data["hr_grid"] = self._grid(hr_x, hr_y, hr_z, ls=hls, d=d)
         self.data["lr_grid"] = self._grid(lr_x, lr_y, lr_z, ls=lls, d=d)
 
+        if self.crop:
+            # We grid lr and hr at their full extent and crop the same patch
+            # hr size is self.inp_size * self.scale
+            # self.inp_size is lr size _after_ cropping
+            # lr_extent is lr grid size _before_ cropping
+
+            # lr_extent = int((d / self.scale) * 4)  # cs_fac = 4
+            lr_extent = self.data["lr_grid"].shape[-1]
+            lr_e = int(torch.randint(low=0, high=lr_extent - self.inp_size + 1, size=(1,)))
+            lr_n = int(torch.randint(low=0, high=lr_extent - self.inp_size + 1, size=(1,)))
+
+            self.data["hr_grid"] = self._crop(
+                self.data["hr_grid"], extent=(lr_e, lr_n), scale=self.scale
+            )
+            self.data["lr_grid"] = self._crop(
+                self.data["lr_grid"], extent=(lr_e, lr_n), scale=1
+            )
+
         _DEBUG = False
         if _DEBUG:
             import matplotlib.pyplot as plt
@@ -170,22 +188,6 @@ class HRLRNoddyverse(NoddyDataset):
 
         if _DEBUG:
             plt.close()
-        # We grid lr and hr at their full extent and crop the same patch
-        # hr size is self.inp_size * self.scale
-        # self.inp_size is lr size _after_ cropping
-        # lr_extent is lr grid size _before_ cropping
-
-        # lr_extent = int((d / self.scale) * 4)  # cs_fac = 4
-        lr_extent = self.data["lr_grid"].shape[-1]
-        lr_e = int(torch.randint(low=0, high=lr_extent - self.inp_size + 1, size=(1,)))
-        lr_n = int(torch.randint(low=0, high=lr_extent - self.inp_size + 1, size=(1,)))
-
-        self.data["hr_grid"] = self._crop(
-            self.data["hr_grid"], extent=(lr_e, lr_n), scale=self.scale
-        )
-        self.data["lr_grid"] = self._crop(
-            self.data["lr_grid"], extent=(lr_e, lr_n), scale=1
-        )
 
     def __getitem__(self, index):
         self._process(index)
@@ -241,6 +243,7 @@ class NoddyverseWrapper(Dataset):
 def load_naprstek_synthetic(
     root="D:/luke/Noddy_data/test",
     data_txt_file="Naprstek_BaseModel1-AllValues-1nTNoise.txt",
+    normalise=False,
 ):
     """Parse synthetic data from Naprstek's GitHub.
     Includes a plot function to mimic the presentation done in their paper.
@@ -255,19 +258,20 @@ def load_naprstek_synthetic(
     https://github.com/TomasNaprstek/Naprstek-Smith-Interpolation/tree/master/StandAlone
     """
     from pathlib import Path
+    from mlnoddy.datasets import Norm
 
     txt_file = next(Path(root).glob(data_txt_file))
     grid = np.loadtxt(txt_file, skiprows=1, dtype=np.float32)
-
-    y = x = np.arange(start=2.5, stop=3000, step=5)
     grid = torch.from_numpy(grid[:, 2]).reshape(600, 600, 1)
 
+    # Visualise as per Naprstek and Smith
     # import colorcet as cc
     # import matplotlib.pyplot as plt
+    # y = x = np.arange(start=2.5, stop=3000, step=5)
     # fig, ax = plt.subplots(figsize=(10, 10))
     # plt.title("Total field (nT)")
     # plt.imshow(
-    #     grid,
+    #     grid.rot90().permute(2, 0, 1).squeeze(),
     #     origin="upper",
     #     cmap=cc.cm.CET_R1,
     #     extent=(x.min(), x.max(), y.min(), y.max()),
@@ -280,4 +284,8 @@ def load_naprstek_synthetic(
     # ax.xaxis.set_major_locator(plt.MultipleLocator(250))
     # plt.grid(which="both", axis="x", c='k')
 
-    return grid.rot90().permute(2, 0, 1)
+    if normalise:
+        norm = Norm(clip=5000).min_max_clip
+        return norm(grid.rot90().permute(2, 0, 1))
+    else:
+        return grid.rot90().permute(2, 0, 1)
