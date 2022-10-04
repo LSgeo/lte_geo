@@ -54,6 +54,7 @@ def main():
         save_path=Path(cfg["inference_output_dir"] or f"inference/{model_name}"),
         rgb_range=cfg["rgb_range"],
         shave_factor=3,  # pixels to shave (edges may include NaN)
+        ids=cfg["plot_samples"],  # Sample IDs
     )
 
     scale_min = spec["wrapper"]["args"]["scale_min"]
@@ -64,22 +65,42 @@ def main():
         f"Saving to: {opts['save_path'].absolute()}"
     )
 
-    ### Do Inference ###
+    # Do Inference ###
+    results_dict = {}
+    custom_results_dict = {}
     pbar_m = tqdm(range(scale_min, scale_max + 1))
     for scale in pbar_m:
-        pbar_m.set_description(f"Scale: {scale}x")
+        pbar_m.set_description(f"{scale}x scale")
+        opts["shave"] = scale * opts["shave_factor"]
+        opts["ids"] = cfg["plot_samples"]  # lazy way to reset custom grid opts
+        opts["gt"] = None
+        opts["set"] = "test"
+
         dataset.scale = scale
         if cfg["limit_to_plots"]:
             dataset.dataset.scale = scale
-        opts["shave"] = scale * opts["shave_factor"]
 
         results = eval(model, scale, loader, opts)
+        results_dict[f"{scale}x"] = results
+        pbar_m.write(f"{scale}x scale - Mean:")
         pbar_m.write(
             ", ".join(
                 f"{metric_name}: {metric_value:.4f}"
                 for metric_name, metric_value in results.items()
             )
         )
+
+        if cfg["custom_grids"]:
+            opts["set"] = "Custom"
+            results = test_custom_data(model, scale, opts)
+            custom_results_dict[f"{scale}x - Custom"] = results
+            pbar_m.write(f"Naprstek {scale}x scale - Mean:")
+            pbar_m.write(
+                ", ".join(
+                    f"{metric_name}: {metric_value:.4f}"
+                    for metric_name, metric_value in results.items()
+                )
+            )
 
         # if cfg["custom_grids"]:
         #     test_custom_data(model, scale, cfg, opts)
@@ -256,50 +277,85 @@ def save_pred(
 #                 "heading": kwargs.get("heading", "NS"),  # "EW"
 #             }
 
-#         def _process(self, index):
-#             self.data = {}
-#             self.data["gt_grid"] = self.sample
-#             hls = self.sp["hr_line_spacing"]
-#             lls = int(hls * self.scale)
-#             hr_x, hr_y, hr_z = self._subsample(self.data["gt_grid"], hls)
-#             lr_x, lr_y, lr_z = self._subsample(self.data["gt_grid"], lls)
-#             # lr dimension: self.inp_size
-#             lr_exent = int((self.crop_extent / self.scale) * 4)  # cs_fac = 4
-#             lr_e = int(torch.randint(low=0, high=lr_exent - 600, size=(1,)))
-#             lr_n = int(torch.randint(low=0, high=lr_exent - 600, size=(1,)))
-#             # Note - we use scale here as a factor describing how big HR is x LR.
-#             # This diverges from what my brain apparently normally does ().
-#             self.data["hr_grid"] = self._grid(
-#                 hr_x, hr_y, hr_z, scale=self.scale, ls=hls, lr_e=lr_e, lr_n=lr_n
-#             )
-#             self.data["lr_grid"] = self._grid(
-#                 lr_x, lr_y, lr_z, scale=1, ls=lls, lr_e=lr_e, lr_n=lr_n
-#             )
+def test_custom_data(model, scale, opts):
+    """Run model on custom samples not in existing Dataset
+    For now, processes Naprstek synthetic test sample.
+    """
+    from datasets.noddyverse import HRLRNoddyverse, NoddyverseWrapper
+    from datasets.noddyverse import load_naprstek_synthetic as load_naprstek
 
-#     synth = {
-#         "naprstek": load_naprstek(
-#             root="D:/luke/Noddy_data/test",
-#             data_txt_file="Naprstek_BaseModel1-AllValues-1nTNoise.txt",
-#         ),
-#     }
-#     dsets = []
-#     for name, sample in synth.items():
-#         d_args = cfg["test_dataset"]["dataset"]["args"]
-#         w_args = cfg["test_dataset"]["wrapper"]["args"]
-#         dset = NoddyverseWrapper(
-#             CustomTestDataset(
-#                 name,
-#                 sample,
-#                 hr_line_spacing=d_args["hr_line_spacing"],
-#                 sample_spacing=d_args["sample_spacing"],
-#                 heading=d_args["heading"],
-#             ),
-#             inp_size=w_args["inp_size"],
-#             crop_extent=w_args["crop_extent"],
-#         )
-#         dset.crop = d_args["test_dataset"]["dataset"]["args"]["crop"]
-#         dset.scale = w_args
-#         dsets.append(dset)
+    class CustomTestDataset(HRLRNoddyverse):
+        def __init__(self, name, sample, **kwargs):
+            self.name = name
+            self.sample = sample
+            # self.inp_size = input_size,
+            self.crop = kwargs.get("crop")
+            self.sp = {
+                "hr_line_spacing": kwargs.get("hr_line_spacing", 1),
+                "sample_spacing": kwargs.get("sample_spacing", 20),
+                "heading": kwargs.get("heading", "NS"),  # "EW"
+            }
+            self.len = len(sample)
+
+        def _process(self, index):
+            self.data = {}
+            self.data["gt_grid"] = self.sample
+            hls = self.sp["hr_line_spacing"]
+            lls = int(hls * self.scale)
+            hr_x, hr_y, hr_z = self._subsample(self.data["gt_grid"], hls)
+            lr_x, lr_y, lr_z = self._subsample(self.data["gt_grid"], lls)
+            # # lr dimension: self.inp_size
+            # lr_exent = int((self.crop_extent / self.scale) * 4)  # cs_fac = 4
+            # lr_e = int(torch.randint(low=0, high=lr_exent - 600, size=(1,)))
+            # lr_n = int(torch.randint(low=0, high=lr_exent - 600, size=(1,)))
+            # # Note - we use scale here as a factor describing how big HR is x LR.
+            # # This diverges from what my brain apparently normally does.
+            self.data["hr_grid"] = self._grid(hr_x, hr_y, hr_z, ls=hls, d=self.inp_size)
+            self.data["lr_grid"] = self._grid(lr_x, lr_y, lr_z, ls=lls, d=self.inp_size)
+
+    synth = {
+        "naprstek": load_naprstek(
+            root="D:/luke/Noddy_data/test",
+            data_txt_file="Naprstek_BaseModel1-AllValues-1nTNoise.txt",
+            normalise=True,
+        ),
+    }
+
+    for name, sample in synth.items():
+        d_args = cfg["test_dataset"]["dataset"]["args"]
+        w_args = cfg["test_dataset"]["wrapper"]["args"]
+
+        dset = NoddyverseWrapper(
+            CustomTestDataset(
+                name,
+                sample,
+                hr_line_spacing=d_args["hr_line_spacing"],
+                sample_spacing=d_args["sample_spacing"],
+                heading=d_args["heading"],
+            ),
+            inp_size=580,
+            scale_min=scale,  # also sets scale
+            crop=w_args["crop"],
+        )
+
+        loader = DataLoader(
+            dset,
+            batch_size=1,
+            shuffle=False,
+            num_workers=0,
+            pin_memory=True,
+            drop_last=False,
+        )
+
+        opts["ids"] = [name]
+        opts["shave"] = 25
+        opts["gt"] = load_naprstek(
+            root="D:/luke/Noddy_data/test",
+            data_txt_file="Naprstek_BaseModel1-AllValues-1nTNoise.txt",
+            normalise=False,
+        )
+
+        return eval(model, scale, loader, opts)
 
 
 if __name__ == "__main__":
