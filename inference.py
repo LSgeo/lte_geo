@@ -56,6 +56,8 @@ def main():
         rgb_range=cfg["rgb_range"],
         shave_factor=3,  # pixels to shave (edges may include NaN)
         ids=cfg["plot_samples"],  # Sample IDs
+        mag=cfg["test_dataset"]["dataset"]["args"]["load_magnetics"],
+        grv=cfg["test_dataset"]["dataset"]["args"]["load_gravity"],
     )
 
     scale_min = spec["wrapper"]["args"]["scale_min"]
@@ -73,7 +75,9 @@ def main():
     for scale in pbar_m:
         pbar_m.set_description(f"{scale}x scale")
         opts["shave"] = scale * opts["shave_factor"]
-        opts["ids"] = cfg["plot_samples"]  # lazy way to reset custom grid opts
+
+        # lazy way to reset custom grid opts
+        opts["ids"] = cfg["plot_samples"]
         opts["gt"] = None
         opts["set"] = "test"
 
@@ -102,8 +106,9 @@ def main():
                     for metric_name, metric_value in results.items()
                 )
             )
-
+    opts["set"] = "test"
     plt_results(results_dict, opts)
+    opts["set"] = "custom"
     plt_results(custom_results_dict, opts)
 
     return results_dict
@@ -153,12 +158,26 @@ def eval(model, scale, loader, opts):
             sr = pred.detach().cpu().squeeze().numpy()
 
             suffix = opts["ids"][i]
+            if opts["mag"]:
+                geo_d = "mag"
+            elif opts["grv"]:
+                geo_d = "grv"
+            else:
+                raise NotImplementedError
+            opts["geo_d"] = geo_d
+
             if opts.get("gt") is not None:
                 gt = opts["gt"].squeeze()
             else:
                 gt_list = Path(cfg["test_dataset"]["dataset"]["args"]["root_path"])
-                gt_list = [Path(str(p)[:-3]) for p in gt_list.glob("**/*.mag.gz")]
-                gt = next(parse_geophysics(gt_list[opts["ids"][i]], mag=True))
+                gt_list = [Path(str(p)[:-3]) for p in gt_list.glob(f"**/*.{geo_d}.gz")]
+                gt = next(
+                    parse_geophysics(
+                        gt_list[opts["ids"][i]],
+                        mag=opts["mag"],
+                        grv=opts["grv"],
+                    )
+                )
 
             save_pred(
                 lr=lr,
@@ -167,6 +186,7 @@ def eval(model, scale, loader, opts):
                 gt=gt,
                 scale=scale,
                 save_path=opts["save_path"],
+                prefix=geo_d,
                 suffix=suffix,
             )
 
@@ -186,10 +206,14 @@ def save_pred(
     scale=None,
     # c_exp: comet_ml.Experiment = None,
     extra="_",
+    prefix="pred",
 ):
     Path(save_path).mkdir(parents=True, exist_ok=True)
-    title = f"TMI_{suffix}{extra}{scale}x.png"
-    norm = Norm(clip=5000)
+    title = f"{prefix}_{suffix}{extra}{scale}x.png"
+    norm = Norm(
+        clip_min=cfg["test_dataset"]["dataset"]["args"]["norm"][0],
+        clip_max=cfg["test_dataset"]["dataset"]["args"]["norm"][1],
+    )
     lr = norm.inverse_mmc(lr)
     sr = norm.inverse_mmc(sr)
     hr = norm.inverse_mmc(hr)
@@ -286,7 +310,7 @@ def plt_results(results, opts):
 
     fig, ax1 = plt.subplots()
     ax2 = ax1.twinx()
-    plt.title(f"{opts['set']} set scale-averaged metrics")
+    plt.title(f"{opts['set']} set scale-averaged metrics - {opts['geo_d']}")
     ax1.set_xlabel("Scale Factor")
     ax1.plot(nlp[:, 0], nlp[:, 2], "r-")
     ax2.plot(nlp[:, 0], nlp[:, 1], "b--")
@@ -294,7 +318,7 @@ def plt_results(results, opts):
     ax2.set_ylabel("Mean Absolute Error", color="blue")
     # ax2.invert_yaxis()
     plt.savefig(
-        Path(opts["save_path"]) / f"0_Scale_Averaged_Metrics_{opts['set']}.png",
+        Path(opts["save_path"]) / f"0_Scale_Averaged_Metrics_{opts['geo_d']}_{opts['set']}.png",
         dpi=300,
     )
 

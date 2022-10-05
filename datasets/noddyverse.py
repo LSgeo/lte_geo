@@ -285,7 +285,7 @@ def load_naprstek_synthetic(
     # plt.grid(which="both", axis="x", c='k')
 
     if normalise:
-        norm = Norm(clip=5000).min_max_clip
+        norm = Norm(clip_min=-5000, clip_max=5000).min_max_clip
         return norm(grid.rot90().permute(2, 0, 1))
     else:
         return grid.rot90().permute(2, 0, 1)

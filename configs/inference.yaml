@@ -16,7 +16,10 @@ test_dataset:
       hr_line_spacing: 4 # 4, so gridded shape is same as gt.
       sample_spacing: 1
       heading: NS
-      norm: 5000 # NotImplemented - TODO, norm, unnorm instantiation
+      load_magnetics: True # Norm [+-5000]
+      norm: [-5000,5000]
+      load_gravity: False # Norm [400,500]
+      # norm: [400,500]
   wrapper:
     name: noddyverse_wrapper
     args:
