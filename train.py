@@ -102,18 +102,6 @@ def train(train_loader, model, optimizer, epoch):
     train_loss = utils.Averager()
     metric_fn = utils.calc_psnr
 
-    data_norm = config["data_norm"]
-    t = data_norm["inp"]
-    inp_sub = (
-        torch.FloatTensor(t["sub"]).view(1, -1, 1, 1).to("cuda", non_blocking=True)
-    )
-    inp_div = (
-        torch.FloatTensor(t["div"]).view(1, -1, 1, 1).to("cuda", non_blocking=True)
-    )
-    t = data_norm["gt"]
-    gt_sub = torch.FloatTensor(t["sub"]).view(1, 1, -1).to("cuda", non_blocking=True)
-    gt_div = torch.FloatTensor(t["div"]).view(1, 1, -1).to("cuda", non_blocking=True)
-
     num_dataset = config.get("train_dataset")["dataset"]["args"]["limit_length"]
     iter_per_epoch = int(
         num_dataset
@@ -121,7 +109,7 @@ def train(train_loader, model, optimizer, epoch):
         * config.get("train_dataset")["dataset"]["args"]["repeat"]
     )
     iteration = 0
-    for batch in tqdm(train_loader, leave=False, desc="train"):
+    for batch in tqdm(train_loader, leave=False, desc="Train iteration"):
         c_exp.set_step(iteration + (iter_per_epoch * (epoch - 1)))
         # Set scale for next batch
         train_loader.dataset.scale = torch.randint(
@@ -141,12 +129,10 @@ def train(train_loader, model, optimizer, epoch):
         for k, v in batch.items():
             batch[k] = v.to("cuda", non_blocking=True)
 
-        inp = (batch["inp"] - inp_sub) / inp_div
-        gt = (batch["gt"] - gt_sub) / gt_div
-        pred = model(inp, batch["coord"], batch["cell"])
+        pred = model(batch["inp"], batch["coord"], batch["cell"])
 
-        loss = loss_fn(pred, gt)
-        psnr = metric_fn(pred, gt, rgb_range=config.get("rgb_range"))
+        loss = loss_fn(pred, batch["gt"])
+        psnr = metric_fn(pred, batch["gt"], rgb_range=config.get("rgb_range"))
 
         # tensorboard
         writer.add_scalars(
@@ -193,20 +179,21 @@ def log_images(loader, model, c_exp: Experiment):
             for j in range(len(batch["gt"])):  # should always be 1, but is handled
                 _min = gt[j].min().item()
                 _max = gt[j].max().item()
+                plot_name = f"sample_{config['plot_samples'][i]:03d}"
                 c_exp.log_image(
                     image_data=pred[j].squeeze().numpy(),
-                    name=f"sample_{config['visually_nice_val_samples'][i]:03d}_sr",
+                    name=plot_name + "_sr",
                     image_minmax=(_min, _max),
                 )
                 if c_exp.curr_epoch == 1:
                     c_exp.log_image(
                         image_data=inp[j].squeeze().numpy(),
-                        name=f"sample_{config['visually_nice_val_samples'][i]:03d}_lr",
+                        name=plot_name + "_lr",
                         image_minmax=(_min, _max),
                     )
                     c_exp.log_image(
                         image_data=gt[j].squeeze().numpy(),
-                        name=f"sample_{config['visually_nice_val_samples'][i]:03d}_hr",
+                        name=plot_name + "_hr",
                         image_minmax=(_min, _max),
                     )
 
@@ -241,12 +228,12 @@ def main(config_, save_path):
     epoch_save = config.get("epoch_save")
     max_val_v = -1e18
 
-    c_exp.add_tags([])
+    c_exp.add_tags(["9x"])
     c_exp.log_parameters(flatten_dict(config))
 
     timer = utils.Timer()
-
-    for epoch in range(epoch_start, epoch_max + 1):
+    epoch_pbar = tqdm(range(epoch_start, epoch_max + 1), desc="Epoch")
+    for epoch in epoch_pbar:
         t_epoch_start = timer.t()
         log_info = [f"epoch {epoch}/{epoch_max}"]
         c_exp.set_epoch(epoch)
