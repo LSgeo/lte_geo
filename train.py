@@ -12,6 +12,7 @@ from pathlib import Path
 from tqdm import tqdm
 from torch.utils.data import DataLoader, Subset
 from torch.optim.lr_scheduler import MultiStepLR
+from torch.cuda.amp import GradScaler
 
 import datasets
 import models
@@ -96,7 +97,7 @@ def prepare_training():
     return model, optimizer, epoch_start, lr_scheduler
 
 
-def train(train_loader, model, optimizer, epoch):
+def train(train_loader, model, optimizer, epoch, scaler):
     model.train()
     loss_fn = nn.L1Loss()
     train_loss = utils.Averager()
@@ -129,30 +130,32 @@ def train(train_loader, model, optimizer, epoch):
         for k, v in batch.items():
             batch[k] = v.to("cuda", non_blocking=True)
 
-        pred = model(batch["inp"], batch["coord"], batch["cell"])
+        with torch.autocast(enabled=True):
+            pred = model(batch["inp"], batch["coord"], batch["cell"])
+            loss = loss_fn(pred, batch["gt"])
+            psnr = metric_fn(pred, batch["gt"], rgb_range=config.get("rgb_range"))
 
-        loss = loss_fn(pred, batch["gt"])
-        psnr = metric_fn(pred, batch["gt"], rgb_range=config.get("rgb_range"))
+        scaler.scale(loss).backward()
+        # loss.backward()
+        scaler.step(optimizer)  # .step()
+        scaler.update()
+        optimizer.zero_grad(set_to_none=True)
+
+        loss_item = loss.item()
+        psnr_item = psnr.item()
+
+        train_loss.add(loss_item)
 
         # tensorboard
         writer.add_scalars(
-            "loss", {"train": loss.item()}, (epoch - 1) * iter_per_epoch + iteration
+            "loss", {"train": loss_item}, (epoch - 1) * iter_per_epoch + iteration
         )
         writer.add_scalars(
-            "psnr", {"train": psnr}, (epoch - 1) * iter_per_epoch + iteration
+            "psnr", {"train": psnr_item}, (epoch - 1) * iter_per_epoch + iteration
         )
-        c_exp.log_metric("L1 loss Train", loss.item())
-        c_exp.log_metric("PSNR Train", psnr)
+        c_exp.log_metric("L1 loss Train", loss_item)
+        c_exp.log_metric("PSNR Train", psnr_item)
         iteration += 1
-
-        train_loss.add(loss.item())
-
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        pred = None
-        loss = None
 
     return train_loss.item()
 
@@ -218,6 +221,7 @@ def main(config_, save_path):
         }
 
     model, optimizer, epoch_start, lr_scheduler = prepare_training()
+    scaler = GradScaler(enabled=True)
 
     n_gpus = len(os.environ["CUDA_VISIBLE_DEVICES"].split(","))
     if n_gpus > 1:
@@ -238,12 +242,7 @@ def main(config_, save_path):
         log_info = [f"epoch {epoch}/{epoch_max}"]
         c_exp.set_epoch(epoch)
 
-        writer.add_scalar("lr", optimizer.param_groups[0]["lr"], epoch)
-        c_exp.log_metric("LR", optimizer.param_groups[0]["lr"])
-
-        train_loss = train(train_loader, model, optimizer, epoch)
-        if lr_scheduler is not None:
-            lr_scheduler.step()
+        train_loss = train(train_loader, model, optimizer, epoch, scaler)
 
         log_info.append(f"train: loss={train_loss:.4f}")
         c_exp.log_metric("L1 loss Train", train_loss)
