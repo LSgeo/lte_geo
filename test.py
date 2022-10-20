@@ -42,7 +42,7 @@ def batched_predict(model, inp, coord, cell, bsize):
 def eval_psnr(
     loader,
     model,
-    data_norm=None,
+    # data_norm=None,
     eval_type=None,
     eval_bsize=None,
     window_size=0,
@@ -56,16 +56,6 @@ def eval_psnr(
     save_path="",
 ):
     model.eval()
-
-    if data_norm is None:
-        data_norm = {"inp": {"sub": [0], "div": [1]}, "gt": {"sub": [0], "div": [1]}}
-    t = data_norm["inp"]
-    inp_sub = torch.FloatTensor(t["sub"]).view(1, -1, 1, 1).cuda()
-    inp_div = torch.FloatTensor(t["div"]).view(1, -1, 1, 1).cuda()
-    t = data_norm["gt"]
-    gt_sub = torch.FloatTensor(t["sub"]).view(1, 1, -1).cuda()
-    gt_div = torch.FloatTensor(t["div"]).view(1, 1, -1).cuda()
-
     scale = int(eval_type.split("-")[1])
     metric_fn = partial(
         utils.calc_psnr,
@@ -97,7 +87,7 @@ def eval_psnr(
         for k, v in batch.items():
             batch[k] = v.cuda()
 
-        inp = (batch["inp"] - inp_sub) / inp_div
+        inp = batch["inp"]
         # SwinIR Evaluation - reflection padding
         if window_size != 0:
             _, _, h_old, w_old = inp.size()
@@ -132,22 +122,21 @@ def eval_psnr(
                     model, inp, coord, cell * max(scale / scale_max, 1), eval_bsize
                 )  # cell clip for extrapolation
 
-        pred = pred * gt_div + gt_sub
         # pred.clamp_(0, 1)
-        if eval_type is not None and fast == False:  # reshape for shaving-eval
+        if eval_type is not None and not fast:  # reshape for shaving-eval
             pred, batch = reshape(batch, h_pad, w_pad, coord, pred)
 
-            if __name__ == "__main__":
-                save_pred(
-                    lr=batch["inp"].detach().cpu().squeeze().numpy(),
-                    hr=batch["gt"].detach().cpu().squeeze().numpy(),
-                    sr=pred.detach().cpu().squeeze().numpy(),
-                    gt_index=config["plot_samples"][i],
-                    save_path=save_path,
-                    suffix=config["plot_samples"][i],
-                    scale=scale,
-                    c_exp=c_exp,
-                )
+            # if __name__ == "__main__":
+            #     save_pred(
+            #         lr=batch["inp"].detach().cpu().squeeze().numpy(),
+            #         hr=batch["gt"].detach().cpu().squeeze().numpy(),
+            #         sr=pred.detach().cpu().squeeze().numpy(),
+            #         gt_index=config["plot_samples"][i],
+            #         save_path=save_path,
+            #         suffix=config["plot_samples"][i],
+            #         scale=scale,
+            #         c_exp=c_exp,
+            #     )
 
         l1_metric = l1_fn(pred, batch["gt"])
         l1_res.add(l1_metric.item(), inp.shape[0])
@@ -179,6 +168,7 @@ def reshape(batch, h_pad, w_pad, coord, pred):
 
 
 def plot_scale_range(loader, model, scales=[1, 2, 3, 4], model_name=""):
+    raise NotImplementedError
     model.eval()
     pbar = tqdm(scales, leave=False, desc="scale_vis")
 
@@ -201,15 +191,15 @@ def plot_scale_range(loader, model, scales=[1, 2, 3, 4], model_name=""):
 
             pred, batch = reshape(batch, h_pad, w_pad, coord, pred)
 
-            save_pred(
-                lr=batch["inp"],
-                sr=pred,
-                hr=batch["gt"],
-                gt_index=config["visually_nice_test_samples"][i],
-                save_path=f"inference/scale_vis/{model_name}",
-                suffix=config["visually_nice_test_samples"][i],
-                scale=scale,
-            )
+            # save_pred(
+            #     lr=batch["inp"],
+            #     sr=pred,
+            #     hr=batch["gt"],
+            #     gt_index=config["visually_nice_test_samples"][i],
+            #     save_path=f"inference/scale_vis/{model_name}",
+            #     suffix=config["visually_nice_test_samples"][i],
+            #     scale=scale,
+            # )
 
 
 if __name__ == "__main__":
