@@ -214,12 +214,6 @@ def main(config_, save_path):
         yaml.dump(config, f, sort_keys=False)
 
     train_loader, val_loader, preview_loader = make_data_loaders()
-    if config.get("data_norm") is None:
-        config["data_norm"] = {
-            "inp": {"sub": [0], "div": [1]},
-            "gt": {"sub": [0], "div": [1]},
-        }
-
     model, optimizer, epoch_start, lr_scheduler = prepare_training()
     scaler = GradScaler(enabled=True)
 
@@ -248,6 +242,11 @@ def main(config_, save_path):
         c_exp.log_metric("L1 loss Train", train_loss)
         # writer.add_scalars('loss', {'train': train_loss}, epoch)
 
+        writer.add_scalar("lr", optimizer.param_groups[0]["lr"], epoch)
+        c_exp.log_metric("LR", lr_scheduler.get_last_lr())
+        if lr_scheduler is not None:
+            lr_scheduler.step()
+
         if n_gpus > 1:
             model_ = model.module
         else:
@@ -271,7 +270,7 @@ def main(config_, save_path):
             val_l1, val_res = eval_psnr(
                 val_loader,
                 model_,
-                data_norm=config["data_norm"],
+                # data_norm=config["data_norm"],
                 eval_type=config.get("eval_type"),
                 eval_bsize=config.get("eval_bsize"),
                 c_exp=c_exp,
