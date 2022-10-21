@@ -32,7 +32,8 @@ def make_data_loader(spec, tag=""):
         bs = 1
         num_workers = 1
         log(
-            f"  Scale range: {dataset.dataset.scale_min} to {dataset.dataset.scale_max}"
+            f"  Scale range: {dataset.dataset.scale_min}"
+            f" to {dataset.dataset.scale_max}"
         )
     else:
         bs = spec["batch_size"]
@@ -130,10 +131,15 @@ def train(train_loader, model, optimizer, epoch, scaler):
         for k, v in batch.items():
             batch[k] = v.to("cuda", non_blocking=True)
 
-        with torch.autocast(enabled=True):
+        with torch.autocast("cuda", enabled=config.get("use_amp", False)):
             pred = model(batch["inp"], batch["coord"], batch["cell"])
             loss = loss_fn(pred, batch["gt"])
-            psnr = metric_fn(pred, batch["gt"], rgb_range=config.get("rgb_range"))
+            psnr = metric_fn(
+                pred,
+                batch["gt"],
+                rgb_range=config.get("rgb_range"),
+                shave=config.get("shave"),
+            )
 
         scaler.scale(loss).backward()
         # loss.backward()
@@ -215,7 +221,7 @@ def main(config_, save_path):
 
     train_loader, val_loader, preview_loader = make_data_loaders()
     model, optimizer, epoch_start, lr_scheduler = prepare_training()
-    scaler = GradScaler(enabled=True)
+    scaler = GradScaler(enabled=config.get("use_amp", False))
 
     n_gpus = len(os.environ["CUDA_VISIBLE_DEVICES"].split(","))
     if n_gpus > 1:
@@ -226,7 +232,17 @@ def main(config_, save_path):
     epoch_save = config.get("epoch_save")
     max_val_v = -1e18
 
-    c_exp.add_tags(["9x"])
+    tags = []
+    tags.extend("AMP" if config.get("use_amp") else None)
+    scale_tags = [
+        f"{s}x"
+        for s in range(
+            config["train_dataset"]["wrapper"]["args"]["scale_min"],
+            config["train_dataset"]["wrapper"]["args"]["scale_max"] + 1,
+        )
+    ]
+    tags.extend(scale_tags)
+    c_exp.add_tags(tags)
     c_exp.log_parameters(flatten_dict(config))
 
     timer = utils.Timer()

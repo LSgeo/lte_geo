@@ -5,7 +5,7 @@ dataset_grid_param:
   norm: [-5000, 5000] # Min Max clip
 
 use_comet: True
-num_workers: 10 # ~6+ on 10900KF / 3090
+use_amp: True
 eval_type: noddyverse-4
 plot_samples: [1, 18, 68, 93, 127, 147, 152, 156, 163, 183, 186, 204, 212, 236, 255, 263, 343, 390, 450, 460]
 
@@ -81,5 +81,6 @@ multi_step_lr:
   gamma: 0.5
 
 rgb_range: 2 #noddyverse min max clip +-5000
+shave: 6
 # resume: ./save/_train_swinir-lte/epoch-last.pth
 ## train.py#49 - change resume logic
