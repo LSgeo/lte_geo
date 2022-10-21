@@ -1,21 +1,16 @@
-dataset_grid_param:
-  load_magnetics: True
-  load_gravity: False
-  load_geology: False
-  norm: [-5000, 5000] # Min Max clip
-
 use_comet: True
 use_amp: True
+num_workers: 11 # ~6+ on 10900KF / 3090
 eval_type: noddyverse-4
-plot_samples: [1, 18, 68, 93, 127, 147, 152, 156, 163, 183, 186, 204, 212, 236, 255, 263, 343, 390, 450, 460]
+plot_samples: [1, 18, 68, 156, 183, 186, 212, 236, 255, 263, 390, 450]
 
 train_dataset:
   dataset:
     name: noddyverse_dataset
     args:
       repeat: 1
-      limit_length: 150_000 #196_533
-      root_path: D:/luke/Noddy_data/noddyverse_train_data
+      limit_length: 40_000 # restrict dataset to first n models (before shuffling)
+      root_path: C:/Users/Public/scratch/noddyverse/train
       hr_line_spacing: 4 # array coords
       sample_spacing: 1
       heading: NS
@@ -26,11 +21,11 @@ train_dataset:
     name: noddyverse_wrapper
     args:
       crop: True # To reduce RAM in batch training? # False if max scale > 4 
-      inp_size: 20 # LR input size
-      scale_min: 2
-      scale_max: 9 # max 4 with no other changes. up to 10, hardcoded to exclude 7
+      inp_size: 45 # LR input size
+      scale_min: 4
+      scale_max: 4 # max 4 with no other changes. up to 10, hardcoded to exclude 7
       # cs_fac: 4 # Hardcoded to 4. If you set to 5, need to hardcode exclude scale 8.
-  batch_size: 64
+  batch_size: 8
 
 val_dataset:
   dataset:
@@ -38,7 +33,7 @@ val_dataset:
     args:
       repeat: 1
       limit_length: 1_600 
-      root_path: D:/luke/Noddy_data/noddyverse_val_data
+      root_path: C:/Users/Public/scratch/noddyverse/val
       hr_line_spacing: 4
       sample_spacing: 1
       heading: NS
@@ -69,15 +64,15 @@ model:
         hidden_list: [256, 256, 256]
     hidden_dim: 256
 
-epoch_max: 30
+epoch_max: 15
 epoch_val: 1
-epoch_save: 3
+epoch_save: 4
 optimizer:
   name: adam
   args:
-    lr: 3.e-4
+    lr: 2.e-4
 multi_step_lr:
-  milestones: [5, 10, 15, 18, 21, 24, 27, 28, 29]
+  milestones: [3, 6, 9, 12, 14]
   gamma: 0.5
 
 rgb_range: 2 #noddyverse min max clip +-5000
