@@ -261,7 +261,17 @@ def save_pred(
     plt_args.pop("vmax")
     plt_args["cmap"] = cc.cm.CET_L1
     imgt = axgt.imshow(gt, **plt_args)
-    axgt.vlines(range(0, gt.shape[1], scale), 0, gt.shape[0], color="r", linewidth=1)
+    axgt.vlines(
+        range(
+            0,
+            gt.shape[1],
+            cfg["test_dataset"]["dataset"]["args"]["hr_line_spacing"] * scale,
+        ),
+        0,
+        gt.shape[0],
+        color="r",
+        linewidth=1,
+    )  # hr_line spacing * scale !!!
     axgt.set_ylim(0, gt.shape[0])
     plt.colorbar(mappable=imgt, ax=axgt, label="nT", location="bottom")
 
@@ -318,7 +328,8 @@ def plt_results(results, opts):
     ax2.set_ylabel("Mean Absolute Error", color="blue")
     # ax2.invert_yaxis()
     plt.savefig(
-        Path(opts["save_path"]) / f"0_Scale_Averaged_Metrics_{opts['geo_d']}_{opts['set']}.png",
+        Path(opts["save_path"])
+        / f"0_Scale_Averaged_Metrics_{opts['geo_d']}_{opts['set']}.png",
         dpi=300,
     )
 
