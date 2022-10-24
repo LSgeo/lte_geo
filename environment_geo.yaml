@@ -1,0 +1,27 @@
+name: lte
+channels:
+  - defaults
+dependencies:
+  - python[version='>=3.10']
+  - pytorch::pytorch[version='>=1.12']
+  - pytorch::torchvision[version='>=0.11']
+  - conda-forge::cudatoolkit=11.6
+  - comet_ml::comet_ml
+  - matplotlib
+  - numpy
+  - verde
+  - black
+  - colorcet
+  - flake8
+  - jupyter
+  - ipykernel
+  - nb_conda
+  - tqdm
+  - rope
+  - conda-forge::timm
+  - tensorboardx
+  - imageio
+  - ca-certificates
+  - certifi
+  - openssl
+prefix: D:\luke\Miniconda3\envs\lte
