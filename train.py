@@ -12,7 +12,7 @@ from pathlib import Path
 from tqdm import tqdm
 from torch.utils.data import DataLoader, Subset
 from torch.optim.lr_scheduler import MultiStepLR
-from torch.cuda.amp import GradScaler
+from torch.cuda.amp import autocast, GradScaler
 
 import datasets
 import models
@@ -131,7 +131,7 @@ def train(train_loader, model, optimizer, epoch, scaler):
         for k, v in batch.items():
             batch[k] = v.to("cuda", non_blocking=True)
 
-        with torch.autocast("cuda", enabled=config.get("use_amp", False)):
+        with autocast(enabled=config.get("use_amp_autocast", False)):
             pred = model(batch["inp"], batch["coord"], batch["cell"])
             loss = loss_fn(pred, batch["gt"])
             psnr = metric_fn(
@@ -221,7 +221,7 @@ def main(config_, save_path):
 
     train_loader, val_loader, preview_loader = make_data_loaders()
     model, optimizer, epoch_start, lr_scheduler = prepare_training()
-    scaler = GradScaler(enabled=config.get("use_amp", False))
+    scaler = GradScaler(enabled=config.get("use_amp_scaler", False))
 
     n_gpus = len(os.environ["CUDA_VISIBLE_DEVICES"].split(","))
     if n_gpus > 1:
@@ -233,7 +233,8 @@ def main(config_, save_path):
     max_val_v = -1e18
 
     tags = []
-    tags.extend("AMP" if config.get("use_amp") else None)
+    tags.extend(["amp_scaler"] if config.get("use_amp_scaler") else [])
+    tags.extend(["amp_autocast"] if config.get("use_amp_autocast") else [])
     scale_tags = [
         f"{s}x"
         for s in range(
@@ -271,7 +272,13 @@ def main(config_, save_path):
         model_spec["sd"] = model_.state_dict()
         optimizer_spec = config["optimizer"]
         optimizer_spec["sd"] = optimizer.state_dict()
-        sv_file = {"model": model_spec, "optimizer": optimizer_spec, "epoch": epoch}
+        scaler_spec = {"sd": scaler.state_dict()}
+        sv_file = {
+            "model": model_spec,
+            "optimizer": optimizer_spec,
+            "epoch": epoch,
+            "scaler": scaler_spec,
+        }
 
         torch.save(sv_file, save_path / f"{c_exp.get_name()}_epoch-last.pth")
 

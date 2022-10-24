@@ -1,5 +1,6 @@
 use_comet: True
-use_amp: True
+use_amp_scaler: False # Currently causes NaN
+use_amp_autocast: True
 num_workers: 11 # ~6+ on 10900KF / 3090
 eval_type: noddyverse-4
 plot_samples: [1, 18, 68, 156, 183, 186, 212, 236, 255, 263, 390, 450]
