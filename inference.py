@@ -16,9 +16,13 @@ import utils
 from test import reshape, batched_predict
 from mlnoddy.datasets import parse_geophysics, Norm
 
+import rasterio
+import tifffile
+from datasets.noddyverse import HRLRNoddyverse, NoddyverseWrapper
+from datasets.noddyverse import load_naprstek_synthetic as load_naprstek
 
-def main():
-    # Load Model ###
+
+def load_model(config, device="cuda"):
     model_dir = Path(cfg["model_dir"])
     model_name = cfg["model_name"]
     model_paths = list(model_dir.glob(f"**/*{model_name}*best.pth"))
@@ -27,8 +31,13 @@ def main():
             f"No unique model found in {model_dir} for *{model_name}*best.pth."
         )
 
-    model_spec = torch.load(model_paths[0])["model"]
-    model = models.make(model_spec, load_sd=True).cuda()
+    model_spec = torch.load(model_paths[0], map_location=device)["model"]
+    model = models.make(model_spec, load_sd=True).to(device)
+    return model, model_name, model_paths
+
+
+def main():
+    model, model_name, model_paths = load_model(cfg)
 
     # Define Data ###
     spec = cfg["test_dataset"]
@@ -334,43 +343,47 @@ def plt_results(results, opts):
     )
 
 
+class CustomTestDataset(HRLRNoddyverse):
+    def __init__(self, name, sample, **kwargs):
+        self.name = name
+        self.sample = sample
+        # self.inp_size = input_size,
+        self.crop = kwargs.get("crop")
+        self.sp = {
+            "hr_line_spacing": kwargs.get("hr_line_spacing", 1),
+            "sample_spacing": kwargs.get("sample_spacing", 20),
+            "heading": kwargs.get("heading", "NS"),  # "EW"
+        }
+        self.len = len(sample)
+
+    def _process(self, index):
+        self.data = {}
+        self.data["gt_grid"] = self.sample
+        hls = self.sp["hr_line_spacing"]
+        lls = int(hls * self.scale)
+        hr_x, hr_y, hr_z = self._subsample(self.data["gt_grid"], hls)
+        lr_x, lr_y, lr_z = self._subsample(self.data["gt_grid"], lls)
+        # # lr dimension: self.inp_size
+        # lr_exent = int((self.crop_extent / self.scale) * 4)  # cs_fac = 4
+        # lr_e = int(torch.randint(low=0, high=lr_exent - 600, size=(1,)))
+        # lr_n = int(torch.randint(low=0, high=lr_exent - 600, size=(1,)))
+        # # Note - we use scale here as a factor describing how big HR is x LR.
+        # # This diverges from what my brain apparently normally does.
+        self.data["hr_grid"] = self._grid(hr_x, hr_y, hr_z, ls=hls, d=self.inp_size)
+        self.data["lr_grid"] = self._grid(lr_x, lr_y, lr_z, ls=lls, d=self.inp_size)
+
+
+def load_real_tifff(p):
+    grid = tifffile.imread(p)
+    return torch.from_numpy(grid).unsqueeze(0)  # add channel dim
+
+
 def test_custom_data(model, scale, opts):
     """Run model on custom samples not in existing Dataset
     For now, processes Naprstek synthetic test sample.
     """
-    from datasets.noddyverse import HRLRNoddyverse, NoddyverseWrapper
-    from datasets.noddyverse import load_naprstek_synthetic as load_naprstek
 
-    class CustomTestDataset(HRLRNoddyverse):
-        def __init__(self, name, sample, **kwargs):
-            self.name = name
-            self.sample = sample
-            # self.inp_size = input_size,
-            self.crop = kwargs.get("crop")
-            self.sp = {
-                "hr_line_spacing": kwargs.get("hr_line_spacing", 1),
-                "sample_spacing": kwargs.get("sample_spacing", 20),
-                "heading": kwargs.get("heading", "NS"),  # "EW"
-            }
-            self.len = len(sample)
-
-        def _process(self, index):
-            self.data = {}
-            self.data["gt_grid"] = self.sample
-            hls = self.sp["hr_line_spacing"]
-            lls = int(hls * self.scale)
-            hr_x, hr_y, hr_z = self._subsample(self.data["gt_grid"], hls)
-            lr_x, lr_y, lr_z = self._subsample(self.data["gt_grid"], lls)
-            # # lr dimension: self.inp_size
-            # lr_exent = int((self.crop_extent / self.scale) * 4)  # cs_fac = 4
-            # lr_e = int(torch.randint(low=0, high=lr_exent - 600, size=(1,)))
-            # lr_n = int(torch.randint(low=0, high=lr_exent - 600, size=(1,)))
-            # # Note - we use scale here as a factor describing how big HR is x LR.
-            # # This diverges from what my brain apparently normally does.
-            self.data["hr_grid"] = self._grid(hr_x, hr_y, hr_z, ls=hls, d=self.inp_size)
-            self.data["lr_grid"] = self._grid(lr_x, lr_y, lr_z, ls=lls, d=self.inp_size)
-
-    synth = {
+    custom = {  # Mapping of test name to normalised C,H,W tensor
         "naprstek": load_naprstek(
             root="D:/luke/Noddy_data/test",
             data_txt_file="Naprstek_BaseModel1-AllValues-1nTNoise.txt",
@@ -378,7 +391,7 @@ def test_custom_data(model, scale, opts):
         ),
     }
 
-    for name, sample in synth.items():
+    for name, sample in custom.items():
         d_args = cfg["test_dataset"]["dataset"]["args"]
         w_args = cfg["test_dataset"]["wrapper"]["args"]
 
@@ -415,8 +428,131 @@ def test_custom_data(model, scale, opts):
         return eval(model, scale, loader, opts)
 
 
+def real_inference(filepath: Path, cfg, scale: float, device="cuda", max_s=128):
+    """Run inference on square (only?) grid data without GT.
+    Provide cfg as used for training/testing - at least model_dir & model_name.
+    max_crop limits grids to RAM-tolerable size
+    cpu device unsupported until LTE etc refactored
+    """
+
+    filepath = Path(filepath)
+    assert filepath.exists(), filepath.absolute()
+    nan_val = -99999
+
+    normaliser = Norm(-5000, 5000)
+    norm = normaliser.min_max_clip
+    unorm = normaliser.inverse_mmc
+
+    model, model_name, _ = load_model(cfg, device)
+
+    grid = norm(load_real_tifff(filepath)).squeeze()  # remove ch dim
+
+    # grid = grid[0:200, 0:200]
+
+    if grid.shape[-2] > max_s or grid.shape[-1] > max_s:
+        lr_tiles, tiles_per_row, tiles_per_column = input_tiler(grid, shape=max_s)
+
+    hr_s = max_s * scale
+    output_sr = nan_val * np.ones(
+        (tiles_per_column * hr_s, tiles_per_row * hr_s), dtype=np.float32
+    )
+    col_num = 0
+    row_num = 0  # top row
+
+    for i, lr in enumerate(tqdm(lr_tiles)):
+        lr = lr.unsqueeze(0)  # Add Batch
+
+        b, c, h, w = lr.shape
+        h *= scale
+        w *= scale
+
+        coord = utils.make_coord((h, w))
+        cell = torch.ones_like(coord)
+        cell[:, 0] *= 2 / h
+        cell[:, 1] *= 2 / w
+
+        lr = lr.to(device, non_blocking=True)
+        coord = coord.unsqueeze(0).to(device, non_blocking=True)
+        cell = cell.unsqueeze(0).to(device, non_blocking=True)
+
+        pred = model(lr, coord, cell).detach().cpu()
+        sr = pred.view((b, c, h, w)).permute(0, 2, 3, 1)[:, :, :, 0].contiguous()
+        sr = unorm(sr.numpy())
+
+        for j in range(len(lr)):
+            rt = hr_s * (row_num + 0)
+            rb = hr_s * (row_num + 1)
+            cl = hr_s * (col_num + 0)
+            cr = hr_s * (col_num + 1)
+            output_sr[rt:rb, cl:cr] = sr[j]
+
+            col_num += 1  # move from left to right
+            if col_num == tiles_per_row:
+                col_num = 0  # move back to left-most column
+                row_num += 1  # move down from top to bottom
+
+    output_sr = output_sr[
+        : grid.shape[0] * scale,
+        : grid.shape[1] * scale,
+    ]  # trim padding
+
+    return output_sr
+
+
+def input_tiler(grid: torch.Tensor, shape=128):
+    """Tile grid (Tensor) to shape
+    Grid here should be H x W (unbatched)
+    Output lr_tiles will be n x C x shape x shape
+    Tiles will be padded with 0 (which is the normalised mean) where necessary
+    """
+
+    if grid.shape[0] == 1:  # if has a channel dim (n.b. change for 3 ch, etc)
+        grid = grid.squeeze()
+    lr_s = shape
+    grid = torch.nn.functional.pad(
+        grid, (0, (lr_s - (grid.shape[-1] % lr_s)), 0, (lr_s - (grid.shape[-2] % lr_s)))
+    )
+
+    tiles_per_row = grid.shape[-1] // lr_s
+    tiles_per_column = grid.shape[-2] // lr_s
+
+    patches = grid.unfold(0, lr_s, lr_s).unfold(1, lr_s, lr_s)
+    lr_tiles = patches.contiguous().view(
+        tiles_per_row * tiles_per_column, -1, lr_s, lr_s
+    )
+
+    return lr_tiles, tiles_per_row, tiles_per_column
+
+
 if __name__ == "__main__":
     with open("configs/inference.yaml", "r") as f:
         cfg = yaml.load(f, Loader=yaml.FullLoader)
 
-    results = main()
+    scale = 4
+    filepath = "D:/luke/data_source/NSW_80m_test_clip/NSW_80m_test_clip_LR.tif"
+
+    # results = main()
+    sr = real_inference(
+        filepath=filepath,
+        cfg=cfg,
+        scale=scale,
+        # device="cuda"
+    )
+
+    plt.imshow(sr, origin="lower")
+    plt.colorbar()
+
+    with rasterio.open(filepath) as src:
+        pred_meta = src.meta
+        pred_meta.update(
+            {
+                "driver": "GTiff",
+                "height": sr.shape[0],
+                "width": sr.shape[1],
+                "transform": src.meta["transform"]
+                * src.meta["transform"].scale(1 / scale),
+            }
+        )
+
+        with rasterio.open("sr_gis.tif", "w", **pred_meta) as dst:
+            dst.write(sr.astype(rasterio.float32), 1)
