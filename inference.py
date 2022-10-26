@@ -301,11 +301,11 @@ def save_pred(
         vmin=-_dmax,
         vmax=_dmax,
     )
-    axdbc.set_title(f"HR - BC")
+    axdbc.set_title("HR - BC")
     imdbc = axdbc.imshow(hr - bc, **plt_args)
     plt.colorbar(mappable=imdbc, ax=axdbc, label=r"$\Delta$nT", location="bottom")
 
-    axdsr.set_title(f"HR - SR")
+    axdsr.set_title("HR - SR")
     imdsr = axdsr.imshow(hr - sr, **plt_args)
     plt.colorbar(mappable=imdsr, ax=axdsr, label=r"$\Delta$nT", location="bottom")
 
@@ -530,6 +530,7 @@ if __name__ == "__main__":
 
     scale = 4
     filepath = "D:/luke/data_source/NSW_80m_test_clip/NSW_80m_test_clip_LR.tif"
+    filepath = Path(filepath)
 
     # results = main()
     sr = real_inference(
@@ -554,5 +555,7 @@ if __name__ == "__main__":
             }
         )
 
-        with rasterio.open("sr_gis.tif", "w", **pred_meta) as dst:
+        with rasterio.open(
+            f"{filepath.stem}_sr-{scale}x_{cfg['model_name']}.tif", "w", **pred_meta,
+        ) as dst:
             dst.write(sr.astype(rasterio.float32), 1)
