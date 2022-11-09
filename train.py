@@ -3,6 +3,7 @@
 import argparse
 from datetime import datetime
 import os
+import random
 
 from comet_ml import Experiment
 import yaml
@@ -13,6 +14,7 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader, Subset
 from torch.optim.lr_scheduler import MultiStepLR
 from torch.cuda.amp import autocast, GradScaler
+import numpy
 
 import datasets
 import models
@@ -211,6 +213,11 @@ def main(config_, save_path):
     global config, log, writer, c_exp
     config = config_
     c_exp = Experiment(disabled=not config["use_comet"])
+    torch.manual_seed(21)
+    numpy.random.seed(21)
+    random.seed(21)
+    torch.use_deterministic_algorithms()
+    torch.backends.cudnn.benchmark = False
     save_path = (
         Path(save_path) / f'{datetime.now().strftime("%y%m%d-%H%M")}_{c_exp.get_name()}'
     )
@@ -245,6 +252,7 @@ def main(config_, save_path):
     tags.extend(scale_tags)
     c_exp.add_tags(tags)
     c_exp.log_parameters(flatten_dict(config))
+    c_exp.log_code("datasets/noddyverse.py")
 
     timer = utils.Timer()
     epoch_pbar = tqdm(range(epoch_start, epoch_max + 1), desc="Epoch")
