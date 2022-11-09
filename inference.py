@@ -10,7 +10,7 @@ from PIL import Image
 from torch.utils.data import DataLoader, Subset
 from tqdm.auto import tqdm
 
-import datasets
+import datasets as dsets
 import models
 import utils
 from test import reshape, batched_predict
@@ -41,8 +41,8 @@ def main():
 
     # Define Data ###
     spec = cfg["test_dataset"]
-    dataset = datasets.make(spec["dataset"])
-    dataset = datasets.make(spec["wrapper"], args={"dataset": dataset})
+    dataset = dsets.make(spec["dataset"])
+    dataset = dsets.make(spec["wrapper"], args={"dataset": dataset})
     # dataset.crop = spec["wrapper"]["args"]["crop"]
     # ^ this should now be handled in .make()
 

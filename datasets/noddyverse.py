@@ -136,8 +136,12 @@ class HRLRNoddyverse(NoddyDataset):
 
             # lr_extent = int((d / self.scale) * 4)  # cs_fac = 4
             lr_extent = self.data["lr_grid"].shape[-1]
-            lr_e = int(torch.randint(low=0, high=lr_extent - self.inp_size + 1, size=(1,)))
-            lr_n = int(torch.randint(low=0, high=lr_extent - self.inp_size + 1, size=(1,)))
+            lr_e = int(
+                torch.randint(low=0, high=lr_extent - self.inp_size + 1, size=(1,))
+            )
+            lr_n = int(
+                torch.randint(low=0, high=lr_extent - self.inp_size + 1, size=(1,))
+            )
 
             self.data["hr_grid"] = self._crop(
                 self.data["hr_grid"], extent=(lr_e, lr_n), scale=self.scale
@@ -220,7 +224,11 @@ class NoddyverseWrapper(Dataset):
 
     def __getitem__(self, index):
         self.dataset.crop = self.crop
-        self.dataset.scale = int(self.scale)
+        self.dataset.scale = torch.randint(
+            low=self.scale_min,
+            high=self.scale_max + 1,
+            size=(1,),
+        )  # int(self.scale)
         data = self.dataset[index]
 
         data["hr_grid"] = torch.from_numpy(data["hr_grid"]).to(torch.float32)
@@ -228,6 +236,12 @@ class NoddyverseWrapper(Dataset):
         # data contains the hr and lr grids at their correct sizes.
 
         hr_coord, hr_val = to_pixel_samples(data["hr_grid"].contiguous())
+
+        if self.sample_q is not None:
+            sample_lst = np.random.choice(len(hr_coord), self.sample_q, replace=False)
+            hr_coord = hr_coord[sample_lst]
+            hr_val = hr_val[sample_lst]
+
         hr_cell = torch.ones_like(hr_coord)
         hr_cell[:, 0] *= 2 / data["hr_grid"].shape[-2]
         hr_cell[:, 1] *= 2 / data["hr_grid"].shape[-1]

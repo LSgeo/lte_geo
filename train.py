@@ -31,6 +31,7 @@ def make_data_loader(spec, tag=""):
     log(f"{tag} dataset:")
     if "preview" in tag:
         dataset = Subset(dataset, config["plot_samples"])
+        dataset.dataset.sample_q = None  # Preview full extent
         bs = 1
         num_workers = 1
         log(
@@ -116,11 +117,11 @@ def train(train_loader, model, optimizer, epoch, scaler):
     for batch in tqdm(train_loader, leave=False, desc="Train iteration"):
         c_exp.set_step(iteration + (iter_per_epoch * (epoch - 1)))
         # Set scale for next batch
-        train_loader.dataset.scale = torch.randint(
-            low=train_loader.dataset.scale_min,
-            high=train_loader.dataset.scale_max + 1,
-            size=(1,),
-        )
+        # train_loader.dataset.scale = torch.randint(
+        #     low=train_loader.dataset.scale_min,
+        #     high=train_loader.dataset.scale_max + 1,
+        #     size=(1,),
+        # )
         # while train_loader.dataset.scale == 7:  # or (self.scale == 8: # if cs_fac=5)
         #     train_loader.dataset.scale = torch.randint(
         #         low=train_loader.dataset.scale_min,
@@ -128,7 +129,7 @@ def train(train_loader, model, optimizer, epoch, scaler):
         #         size=(1,),
         #     )
         #     print(f"set scale to {train_loader.dataset.scale} instead of 7")
-        c_exp.log_metric("Batch scale", train_loader.dataset.scale)
+        # c_exp.log_metric("Batch scale", train_loader.dataset.scale)
 
         for k, v in batch.items():
             batch[k] = v.to("cuda", non_blocking=True)
@@ -183,6 +184,7 @@ def log_images(loader, model, c_exp: Experiment):
 
             pred = model(inp, coord, cell)
             pred, batch = reshape(batch, h_pad, w_pad, coord, pred)
+
             inp = batch["inp"].detach().cpu()
             pred = pred.detach().cpu()
             gt = batch["gt"].detach().cpu()

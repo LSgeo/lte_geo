@@ -1,6 +1,6 @@
 use_comet: True
 use_amp_scaler: False # Currently causes NaN
-use_amp_autocast: True
+use_amp_autocast: False
 num_workers: 11 # ~6+ on 10900KF / 3090
 eval_type: noddyverse-4
 plot_samples: [1, 18, 68, 156, 183, 186, 212, 236, 255, 263, 390, 450]
@@ -23,6 +23,7 @@ train_dataset:
     args:
       crop: True # To reduce RAM in batch training? # False if max scale > 4 
       inp_size: 45 # LR input size
+      # sample_q: 2025 # inp_size ** 2 (45*45)
       scale_min: 4
       scale_max: 4 # max 4 with no other changes. up to 10, hardcoded to exclude 7
       # cs_fac: 4 # Hardcoded to 4. If you set to 5, need to hardcode exclude scale 8.
@@ -46,6 +47,7 @@ val_dataset:
     args:
       crop: True 
       inp_size: 45
+      # sample_q: 2025
       scale_min: 4 
       scale_max: 4
   batch_size: 8
