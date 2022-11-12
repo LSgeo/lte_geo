@@ -218,7 +218,7 @@ def main(config_, save_path):
     torch.manual_seed(21)
     numpy.random.seed(21)
     random.seed(21)
-    torch.use_deterministic_algorithms()
+    torch.use_deterministic_algorithms(False)
     torch.backends.cudnn.benchmark = False
     save_path = (
         Path(save_path) / f'{datetime.now().strftime("%y%m%d-%H%M")}_{c_exp.get_name()}'
@@ -241,7 +241,7 @@ def main(config_, save_path):
     epoch_save = config.get("epoch_save")
     max_val_v = -1e18
 
-    tags = []
+    tags = ["Reproducible"]
     tags.extend(["amp_scaler"] if config.get("use_amp_scaler") else [])
     tags.extend(["amp_autocast"] if config.get("use_amp_autocast") else [])
     scale_tags = [
