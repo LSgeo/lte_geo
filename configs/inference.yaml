@@ -1,11 +1,11 @@
 model_dir: D:/luke/lte_geo/save/_train_swinir-lte_geo
-model_name: beige_ottoman
+model_name: artificial_observatory #average_aerator # artificial_observatory #beige_ottoman
 inference_output_dir: # blank or Custom path
 num_workers: 0
 rgb_range: 2 # noddyverse min max clip +-5000 to range [-1, 1]
 limit_to_plots: True
 plot_samples: [95, 19, 59, 79, 86, 116, 209, 265, 317, 319, 320,321,322,323,324,325,326,327,328,329,330,400,401,402,403,404,405,406,407,408,409,410,411,412,413,414,415]
-custom_grids: True
+custom_grids: False
 eval_bsize: 360_000 # Reduce RAM usage? num points per model call
 
 test_dataset:
@@ -25,6 +25,6 @@ test_dataset:
     args:
       crop: False
       inp_size: 45
-      scale_min: 2
+      scale_min: 1
       scale_max: 9
   batch_size: 1

@@ -22,13 +22,13 @@ from datasets.noddyverse import HRLRNoddyverse, NoddyverseWrapper
 from datasets.noddyverse import load_naprstek_synthetic as load_naprstek
 
 
-def load_model(config, device="cuda"):
+def load_model(config, device="cuda", best_or_last="last"):
     model_dir = Path(cfg["model_dir"])
     model_name = cfg["model_name"]
-    model_paths = list(model_dir.glob(f"**/*{model_name}*best.pth"))
+    model_paths = list(model_dir.glob(f"**/*{model_name}*{best_or_last}.pth"))
     if len(model_paths) != 1:
         raise FileNotFoundError(
-            f"No unique model found in {model_dir} for *{model_name}*best.pth."
+            f"No unique model found in {model_dir} for *{model_name}*{best_or_last}.pth."
         )
 
     model_spec = torch.load(model_paths[0], map_location=device)["model"]
@@ -91,8 +91,13 @@ def main():
         opts["set"] = "test"
 
         dataset.scale = scale
+        dataset.scale_min = scale
+        dataset.scale_max = scale
         if cfg["limit_to_plots"]:
+            # Not sure how to better handle Subset dataset
             dataset.dataset.scale = scale
+            dataset.dataset.scale_min = scale
+            dataset.dataset.scale_max = scale
 
         results = eval(model, scale, loader, opts)
         results_dict[f"{scale}x"] = results
@@ -115,10 +120,13 @@ def main():
                     for metric_name, metric_value in results.items()
                 )
             )
+
+    if cfg["custom_grids"]:
+        opts["set"] = "custom"
+        plt_results(custom_results_dict, opts)
+
     opts["set"] = "test"
     plt_results(results_dict, opts)
-    opts["set"] = "custom"
-    plt_results(custom_results_dict, opts)
 
     return results_dict
 
@@ -327,9 +335,11 @@ def plt_results(results, opts):
         dtype=float,
     )
 
-    fig, ax1 = plt.subplots()
+    fig, ax1 = plt.subplots(constrained_layout=True, figsize=(8, 5))
     ax2 = ax1.twinx()
-    plt.title(f"{opts['set']} set scale-averaged metrics - {opts['geo_d']}")
+    plt.title(
+        f"Mean metrics - Set: {opts['set']} - Model: {opts['model_name']}"
+    )  # - Data: {opts['geo_d']}") 
     ax1.set_xlabel("Scale Factor")
     ax1.plot(nlp[:, 0], nlp[:, 2], "r-")
     ax2.plot(nlp[:, 0], nlp[:, 1], "b--")
@@ -338,7 +348,7 @@ def plt_results(results, opts):
     # ax2.invert_yaxis()
     plt.savefig(
         Path(opts["save_path"])
-        / f"0_Scale_Averaged_Metrics_{opts['geo_d']}_{opts['set']}.png",
+        / f"0_Scale_Averaged_Metrics_{opts['set']}.png",
         dpi=300,
     )
 
@@ -532,30 +542,37 @@ if __name__ == "__main__":
     filepath = "D:/luke/data_source/NSW_80m_test_clip/NSW_80m_test_clip_LR.tif"
     filepath = Path(filepath)
 
-    # results = main()
-    sr = real_inference(
-        filepath=filepath,
-        cfg=cfg,
-        scale=scale,
-        # device="cuda"
-    )
+    do = 1
 
-    plt.imshow(sr, origin="lower")
-    plt.colorbar()
+    if do == 1:
+        results = main()
 
-    with rasterio.open(filepath) as src:
-        pred_meta = src.meta
-        pred_meta.update(
-            {
-                "driver": "GTiff",
-                "height": sr.shape[0],
-                "width": sr.shape[1],
-                "transform": src.meta["transform"]
-                * src.meta["transform"].scale(1 / scale),
-            }
+    if do == 2:
+        sr = real_inference(
+            filepath=filepath,
+            cfg=cfg,
+            scale=scale,
+            # device="cuda"
         )
 
-        with rasterio.open(
-            f"{filepath.stem}_sr-{scale}x_{cfg['model_name']}.tif", "w", **pred_meta,
-        ) as dst:
-            dst.write(sr.astype(rasterio.float32), 1)
+        plt.imshow(sr, origin="lower")
+        plt.colorbar()
+
+        with rasterio.open(filepath) as src:
+            pred_meta = src.meta
+            pred_meta.update(
+                {
+                    "driver": "GTiff",
+                    "height": sr.shape[0],
+                    "width": sr.shape[1],
+                    "transform": src.meta["transform"]
+                    * src.meta["transform"].scale(1 / scale),
+                }
+            )
+
+            with rasterio.open(
+                f"{filepath.stem}_sr-{scale}x_{cfg['model_name']}.tif",
+                "w",
+                **pred_meta,
+            ) as dst:
+                dst.write(sr.astype(rasterio.float32), 1)
