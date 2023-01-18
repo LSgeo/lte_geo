@@ -10,7 +10,7 @@ train_dataset:
     name: noddyverse_dataset
     args:
       repeat: 1
-      limit_length: 40_000 # restrict dataset to first n models (before shuffling)
+      limit_length: 600_000 # restrict dataset to first n models (before shuffling)
       root_path: C:/Users/Public/scratch/noddyverse/train
       hr_line_spacing: 4 # array coords
       sample_spacing: 1
@@ -24,7 +24,7 @@ train_dataset:
       crop: True # To reduce RAM in batch training? # False if max scale > 4 
       inp_size: 45 # LR input size
       sample_q: 2025 # inp_size ** 2 (45*45)
-      scale_min: 1
+      scale_min: 2
       scale_max: 4 # max 4 with no other changes. up to 10, hardcoded to exclude 7
       # cs_fac: 4 # Hardcoded to 4. If you set to 5, need to hardcode exclude scale 8.
   batch_size: 8
@@ -34,7 +34,7 @@ val_dataset:
     name: noddyverse_dataset
     args:
       repeat: 1
-      limit_length: 1_600 
+      limit_length: 5000 #1_600 
       root_path: C:/Users/Public/scratch/noddyverse/val
       hr_line_spacing: 4
       sample_spacing: 1
@@ -45,7 +45,7 @@ val_dataset:
   wrapper:
     name: noddyverse_wrapper
     args:
-      crop: True 
+      crop: False 
       inp_size: 45
       sample_q: 2025
       scale_min: 6 
@@ -67,18 +67,19 @@ model:
         hidden_list: [256, 256, 256]
     hidden_dim: 256
 
-epoch_max: 30
+epoch_max: 10
 epoch_val: 1
 epoch_save: 4
 optimizer:
   name: adam
   args:
-    lr: 2.e-4
+    lr: 3.e-4
 multi_step_lr:
-  milestones: [4,8,12,16,20,24,28,29,30]
-  gamma: 0.5
+  milestones: [1,2,3,4,5,6,7,8,9,10]
+  gamma: 0.75
 
 rgb_range: 2 #noddyverse min max clip +-5000
 shave: 6
-# resume: D:\luke\lte_geo\save\_train_swinir-lte_geo\221112-1125_precise_courtyard_4267\precise_courtyard_4267_epoch-last.pth
+resume: D:\luke\lte_geo\save\_train_swinir-lte_geo\221113-1221_average_aerator_7080\average_aerator_7080_epoch-last.pth
+only_resume_weights: true
 ## train.py#49 - change resume logic
