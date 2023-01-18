@@ -38,8 +38,8 @@ def load_model(config, device="cuda", best_or_last="last"):
 
 def main():
     model, model_name, model_paths = load_model(cfg)
-
     # Define Data ###
+
     spec = cfg["test_dataset"]
     dataset = dsets.make(spec["dataset"])
     dataset = dsets.make(spec["wrapper"], args={"dataset": dataset})
@@ -345,10 +345,12 @@ def plt_results(results, opts):
     ax2.plot(nlp[:, 0], nlp[:, 1], "b--")
     ax1.set_ylabel("PSNR", color="red")
     ax2.set_ylabel("Mean Absolute Error", color="blue")
+    ax1.set_ylim(30, 80)
+    ax2.set_ylim(0.0, 0.04)
     # ax2.invert_yaxis()
     plt.savefig(
         Path(opts["save_path"])
-        / f"0_Scale_Averaged_Metrics_{opts['set']}.png",
+        / f"0_Scale_Averaged_Metrics_{opts['set']}_new-lim.png",
         dpi=300,
     )
 
@@ -383,8 +385,15 @@ class CustomTestDataset(HRLRNoddyverse):
         self.data["lr_grid"] = self._grid(lr_x, lr_y, lr_z, ls=lls, d=self.inp_size)
 
 
-def load_real_tifff(p):
-    grid = tifffile.imread(p)
+def load_real_data(p):
+    if "tif" in p.suffix:
+        grid = tifffile.imread(p)
+    else:
+        try:
+            grid = rasterio.open(p).read().squeeze()
+        except Exception as e:
+            raise e
+
     return torch.from_numpy(grid).unsqueeze(0)  # add channel dim
 
 
@@ -455,7 +464,7 @@ def real_inference(filepath: Path, cfg, scale: float, device="cuda", max_s=128):
 
     model, model_name, _ = load_model(cfg, device)
 
-    grid = norm(load_real_tifff(filepath)).squeeze()  # remove ch dim
+    grid = norm(load_real_data(filepath)).squeeze()  # remove ch dim
 
     # grid = grid[0:200, 0:200]
 
@@ -539,10 +548,11 @@ if __name__ == "__main__":
         cfg = yaml.load(f, Loader=yaml.FullLoader)
 
     scale = 4
-    filepath = "D:/luke/data_source/NSW_80m_test_clip/NSW_80m_test_clip_LR.tif"
+    filepath = r"D:/luke/data_source/P1134/P1134-grid-tmi.ers"
+    # filepath = r"//uniwa.uwa.edu.au/userhome/Students7/22905007/Downloads/Grids_1A/AngeloNorth_TMI_80m.ers"
     filepath = Path(filepath)
 
-    do = 1
+    do = 2
 
     if do == 1:
         results = main()
@@ -552,6 +562,7 @@ if __name__ == "__main__":
             filepath=filepath,
             cfg=cfg,
             scale=scale,
+            max_s=cfg["real_inference_size"],
             # device="cuda"
         )
 

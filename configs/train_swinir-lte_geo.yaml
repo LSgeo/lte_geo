@@ -1,8 +1,8 @@
 use_comet: True
 use_amp_scaler: False # Currently causes NaN
-use_amp_autocast: False
+use_amp_autocast: False # Seems to make results bad lol
 num_workers: 11 # ~6+ on 10900KF / 3090
-eval_type: noddyverse-4
+eval_type: noddyverse-6
 plot_samples: [1, 18, 68, 156, 183, 186, 212, 236, 255, 263, 390, 450]
 
 train_dataset:
@@ -24,7 +24,7 @@ train_dataset:
       crop: True # To reduce RAM in batch training? # False if max scale > 4 
       inp_size: 45 # LR input size
       sample_q: 2025 # inp_size ** 2 (45*45)
-      scale_min: 4
+      scale_min: 1
       scale_max: 4 # max 4 with no other changes. up to 10, hardcoded to exclude 7
       # cs_fac: 4 # Hardcoded to 4. If you set to 5, need to hardcode exclude scale 8.
   batch_size: 8
@@ -48,8 +48,8 @@ val_dataset:
       crop: True 
       inp_size: 45
       sample_q: 2025
-      scale_min: 4 
-      scale_max: 4
+      scale_min: 6 
+      scale_max: 6
   batch_size: 8
 
 model:
@@ -67,7 +67,7 @@ model:
         hidden_list: [256, 256, 256]
     hidden_dim: 256
 
-epoch_max: 15
+epoch_max: 30
 epoch_val: 1
 epoch_save: 4
 optimizer:
@@ -75,10 +75,10 @@ optimizer:
   args:
     lr: 2.e-4
 multi_step_lr:
-  milestones: [3, 6, 9, 12, 14]
+  milestones: [4,8,12,16,20,24,28,29,30]
   gamma: 0.5
 
 rgb_range: 2 #noddyverse min max clip +-5000
 shave: 6
-# resume: ./save/_train_swinir-lte/epoch-last.pth
+# resume: D:\luke\lte_geo\save\_train_swinir-lte_geo\221112-1125_precise_courtyard_4267\precise_courtyard_4267_epoch-last.pth
 ## train.py#49 - change resume logic

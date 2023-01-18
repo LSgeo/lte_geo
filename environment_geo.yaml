@@ -1,11 +1,13 @@
 name: lte
 channels:
-  - defaults
+  - nvidia
+  - pytorch
+  - conda-forge
 dependencies:
   - python[version='>=3.10']
-  - pytorch::pytorch[version='>=1.12']
-  - pytorch::torchvision[version='>=0.11']
-  - conda-forge::cudatoolkit=11.6
+  - pytorch::pytorch[version='>=1.13']
+  - pytorch::torchvision[version='>=0.14']
+  - pytorch-cuda[version='>=11.7']
   - comet_ml::comet_ml
   - matplotlib
   - numpy

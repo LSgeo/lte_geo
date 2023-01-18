@@ -150,48 +150,48 @@ class HRLRNoddyverse(NoddyDataset):
                 self.data["lr_grid"], extent=(lr_e, lr_n), scale=1
             )
 
-        _DEBUG = False
-        if _DEBUG:
-            import matplotlib.pyplot as plt
-            import colorcet as cc
-            from torchvision.transforms.functional import resize
-            from torchvision.transforms import InterpolationMode
+        # _DEBUG = False
+        # if _DEBUG:
+        #     import matplotlib.pyplot as plt
+        #     import colorcet as cc
+        #     from torchvision.transforms.functional import resize
+        #     from torchvision.transforms import InterpolationMode
 
-            fig, [
-                [axgt, axhr, axlr],
-                [axoff, axdgh, axdlr],
-            ] = plt.subplots(2, 3)
-            plt.suptitle(f"{self.scale}x gridding debug visualisations_id-{index}")
+        #     fig, [
+        #         [axgt, axhr, axlr],
+        #         [axoff, axdgh, axdlr],
+        #     ] = plt.subplots(2, 3)
+        #     plt.suptitle(f"{self.scale}x gridding debug visualisations_id-{index}")
 
-            axgt.set_title("gt")
-            axgt.imshow(self.data["gt_grid"][:, :180, :180].squeeze())
-            axhr.set_title("hr")
-            axhr.imshow(self.data["hr_grid"].squeeze())
-            axlr.set_title("lr")
-            axlr.imshow(self.data["lr_grid"].squeeze())
-            axoff.set_axis_off()
-            axdgh.set_title("gt - hr")
-            dgh = axdgh.imshow(
-                (self.data["gt_grid"][:, :180, :180] - self.data["hr_grid"]).squeeze(),
-                cmap=cc.cm.CET_D1,
-            )
-            plt.colorbar(dgh, ax=axdgh, location="bottom")
-            axdlr.set_title("resize_gt - lr")
-            dlr = axdlr.imshow(
-                (
-                    resize(
-                        self.data["gt_grid"][:, :180, :180],
-                        self.data["lr_grid"].shape[1:],
-                        InterpolationMode.BICUBIC,
-                    )
-                    - self.data["lr_grid"]
-                ).squeeze(),
-                cmap=cc.cm.CET_D1,
-            )
-            plt.colorbar(dlr, ax=axdlr, location="bottom")
+        #     axgt.set_title("gt")
+        #     axgt.imshow(self.data["gt_grid"][:, :180, :180].squeeze())
+        #     axhr.set_title("hr")
+        #     axhr.imshow(self.data["hr_grid"].squeeze())
+        #     axlr.set_title("lr")
+        #     axlr.imshow(self.data["lr_grid"].squeeze())
+        #     axoff.set_axis_off()
+        #     axdgh.set_title("gt - hr")
+        #     dgh = axdgh.imshow(
+        #         (self.data["gt_grid"][:, :180, :180] - self.data["hr_grid"]).squeeze(),
+        #         cmap=cc.cm.CET_D1,
+        #     )
+        #     plt.colorbar(dgh, ax=axdgh, location="bottom")
+        #     axdlr.set_title("resize_gt - lr")
+        #     dlr = axdlr.imshow(
+        #         (
+        #             resize(
+        #                 self.data["gt_grid"][:, :180, :180],
+        #                 self.data["lr_grid"].shape[1:],
+        #                 InterpolationMode.BICUBIC,
+        #             )
+        #             - self.data["lr_grid"]
+        #         ).squeeze(),
+        #         cmap=cc.cm.CET_D1,
+        #     )
+        #     plt.colorbar(dlr, ax=axdlr, location="bottom")
 
-        if _DEBUG:
-            plt.close()
+        # if _DEBUG:
+        #     plt.close()
 
     def __getitem__(self, index):
         self._process(index)
