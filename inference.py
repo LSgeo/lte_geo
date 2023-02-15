@@ -22,7 +22,7 @@ from datasets.noddyverse import HRLRNoddyverse, NoddyverseWrapper
 from datasets.noddyverse import load_naprstek_synthetic as load_naprstek
 
 
-def load_model(config, device="cuda", best_or_last="last"):
+def load_model(cfg, device="cuda", best_or_last="last"):
     model_dir = Path(cfg["model_dir"])
     model_name = cfg["model_name"]
     model_paths = list(model_dir.glob(f"**/*{model_name}*{best_or_last}.pth"))
@@ -67,6 +67,9 @@ def main():
         ids=cfg["plot_samples"],  # Sample IDs
         mag=cfg["test_dataset"]["dataset"]["args"]["load_magnetics"],
         grv=cfg["test_dataset"]["dataset"]["args"]["load_gravity"],
+        eval_bsize=cfg["eval_bsize"],
+        limit_to_plots=cfg["limit_to_plots"],
+        gt_list=cfg["test_dataset"]["dataset"]["args"]["root_path"],
     )
 
     scale_min = spec["wrapper"]["args"]["scale_min"]
@@ -99,7 +102,7 @@ def main():
             dataset.dataset.scale_min = scale
             dataset.dataset.scale_max = scale
 
-        results = eval(model, scale, loader, opts)
+        results = eval(model, scale, loader, opts, cfg)
         results_dict[f"{scale}x"] = results
         pbar_m.write(f"{scale}x scale - Mean:")
         pbar_m.write(
@@ -131,7 +134,7 @@ def main():
     return results_dict
 
 
-def eval(model, scale, loader, opts):
+def eval(model, scale, loader, opts, cfg=None, return_grids=False):
     model.eval()
 
     l1_fn = torch.nn.L1Loss()
@@ -140,7 +143,7 @@ def eval(model, scale, loader, opts):
         utils.calc_psnr,
         dataset="noddyverse",
         scale=scale,
-        rgb_range=cfg["rgb_range"],
+        rgb_range=opts["rgb_range"],
         shave=opts["shave"],
     )
     psnr_avg = utils.Averager()
@@ -153,8 +156,8 @@ def eval(model, scale, loader, opts):
         batch["gt"] = batch["gt"].to("cuda", non_blocking=True)
 
         with torch.no_grad():
-            if cfg["eval_bsize"]:
-                pred = batched_predict(model, inp, coord, cell, cfg["eval_bsize"])
+            if opts["eval_bsize"]:
+                pred = batched_predict(model, inp, coord, cell, opts["eval_bsize"])
             else:
                 pred = model(inp, coord, cell)
 
@@ -169,7 +172,7 @@ def eval(model, scale, loader, opts):
             f"Mean: L1: {l1_avg.item():.4f}, PSNR: {psnr_avg.item():.4f}"
         )
 
-        if cfg["limit_to_plots"]:
+        if opts["limit_to_plots"]:
             lr = batch["inp"].detach().cpu().squeeze().numpy()
             hr = batch["gt"].detach().cpu().squeeze().numpy()
             sr = pred.detach().cpu().squeeze().numpy()
@@ -186,7 +189,7 @@ def eval(model, scale, loader, opts):
             if opts.get("gt") is not None:
                 gt = opts["gt"].squeeze()
             else:
-                gt_list = Path(cfg["test_dataset"]["dataset"]["args"]["root_path"])
+                gt_list = Path(opts["gt_list"])
                 gt_list = [Path(str(p)[:-3]) for p in gt_list.glob(f"**/*.{geo_d}.gz")]
                 gt = next(
                     parse_geophysics(
@@ -205,12 +208,19 @@ def eval(model, scale, loader, opts):
                 save_path=opts["save_path"],
                 prefix=geo_d,
                 suffix=suffix,
+                cfg=cfg,
             )
-
-    return {
-        "L1": l1_avg.item(),
-        "PSNR": psnr_avg.item(),
-    }
+    if return_grids:
+        return {
+            "L1": l1_avg.item(),
+            "PSNR": psnr_avg.item(),
+            "grids": dict(lr=lr, hr=hr, sr=sr, gt=gt),
+        }
+    else:
+        return {
+            "L1": l1_avg.item(),
+            "PSNR": psnr_avg.item(),
+        }
 
 
 def save_pred(
@@ -224,6 +234,7 @@ def save_pred(
     # c_exp: comet_ml.Experiment = None,
     extra="_",
     prefix="pred",
+    cfg=None,
 ):
     Path(save_path).mkdir(parents=True, exist_ok=True)
     title = f"{prefix}_{suffix}{extra}{scale}x.png"
@@ -320,7 +331,7 @@ def save_pred(
     # lr_ls = ["dataset"]["args"]["hr_line_spacing"] * scale
     plt.savefig(
         Path(save_path) / (title),
-        dpi=300,
+        dpi=600,
     )
     plt.close()
 
@@ -339,7 +350,7 @@ def plt_results(results, opts):
     ax2 = ax1.twinx()
     plt.title(
         f"Mean metrics - Set: {opts['set']} - Model: {opts['model_name']}"
-    )  # - Data: {opts['geo_d']}") 
+    )  # - Data: {opts['geo_d']}")
     ax1.set_xlabel("Scale Factor")
     ax1.plot(nlp[:, 0], nlp[:, 2], "r-")
     ax2.plot(nlp[:, 0], nlp[:, 1], "b--")
@@ -349,8 +360,7 @@ def plt_results(results, opts):
     ax2.set_ylim(0.0, 0.04)
     # ax2.invert_yaxis()
     plt.savefig(
-        Path(opts["save_path"])
-        / f"0_Scale_Averaged_Metrics_{opts['set']}_new-lim.png",
+        Path(opts["save_path"]) / f"0_Scale_Averaged_Metrics_{opts['set']}_new-lim.png",
         dpi=300,
     )
 
@@ -397,7 +407,7 @@ def load_real_data(p):
     return torch.from_numpy(grid).unsqueeze(0)  # add channel dim
 
 
-def test_custom_data(model, scale, opts):
+def test_custom_data(model, scale, opts, cfg=None):
     """Run model on custom samples not in existing Dataset
     For now, processes Naprstek synthetic test sample.
     """
@@ -444,7 +454,7 @@ def test_custom_data(model, scale, opts):
             normalise=False,
         )
 
-        return eval(model, scale, loader, opts)
+        return eval(model, scale, loader, opts, cfg=cfg)
 
 
 def real_inference(filepath: Path, cfg, scale: float, device="cuda", max_s=128):
@@ -552,7 +562,7 @@ if __name__ == "__main__":
     # filepath = r"//uniwa.uwa.edu.au/userhome/Students7/22905007/Downloads/Grids_1A/AngeloNorth_TMI_80m.ers"
     filepath = Path(filepath)
 
-    do = 2
+    do = 1  # 1 for synthetic, 2 for real inference
 
     if do == 1:
         results = main()
