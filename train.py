@@ -390,3 +390,4 @@ if __name__ == "__main__":
     save_path = os.path.join("./save", save_name)
 
     main(config, save_path)
+    print("Finished.")

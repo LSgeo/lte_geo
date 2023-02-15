@@ -144,23 +144,23 @@ def eval_psnr(
         val_res.add(res.item(), inp.shape[0])
 
         if verbose:
-            pbar.set_description("PSNR test {:.4f}".format(val_res.item()))
+            pbar.set_description("PSNR eval {:.4f}".format(val_res.item()))
 
     return l1_res.item(), val_res.item()
 
 
 def reshape(batch, h_pad, w_pad, coord, pred):
     # gt reshape
-    ih, iw = batch["inp"].shape[-2:]
+    b, c, ih, iw = batch["inp"].shape
     s = math.sqrt(batch["coord"].shape[1] / (ih * iw))
-    shape = [batch["inp"].shape[0], round(ih * s), round(iw * s), 1]
+    shape = [b, round(ih * s), round(iw * s), c]
     batch["gt"] = batch["gt"].view(*shape).permute(0, 3, 1, 2).contiguous()
 
     # prediction reshape
     ih += h_pad
     iw += w_pad
     s = math.sqrt(coord.shape[1] / (ih * iw))
-    shape = [batch["inp"].shape[0], round(ih * s), round(iw * s), 1]
+    shape = [b, round(ih * s), round(iw * s), c]
     pred = pred.view(*shape).permute(0, 3, 1, 2).contiguous()
     pred = pred[..., : batch["gt"].shape[-2], : batch["gt"].shape[-1]]
 
