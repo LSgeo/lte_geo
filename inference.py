@@ -2,11 +2,13 @@ from functools import partial
 from pathlib import Path
 
 import colorcet as cc
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import yaml
 from PIL import Image
+from skimage.feature import canny
 from torch.utils.data import DataLoader, Subset
 from tqdm.auto import tqdm
 
@@ -210,6 +212,7 @@ def eval(model, scale, loader, opts, cfg=None, return_grids=False):
                 suffix=suffix,
                 cfg=cfg,
             )
+
     if return_grids:
         return {
             "L1": l1_avg.item(),
@@ -221,6 +224,44 @@ def eval(model, scale, loader, opts, cfg=None, return_grids=False):
             "L1": l1_avg.item(),
             "PSNR": psnr_avg.item(),
         }
+
+
+def plot_canny(ax, hr, sr, bc, sigma=1.0):
+    """Plot canny edge detection as rgb composite image.
+    R: HR, G: SR: B: Bicubic
+    """
+    lt = None  # 0.1 * (hr.max() - hr.min())
+    ht = None  # 0.2 * (hr.max() - hr.min())
+
+    hr_canny = canny(hr, sigma=sigma, low_threshold=lt, high_threshold=ht)
+    sr_canny = canny(sr, sigma=sigma, low_threshold=lt, high_threshold=ht)
+    bc_canny = canny(bc, sigma=sigma, low_threshold=lt, high_threshold=ht)
+    rgb_can = np.stack([hr_canny, sr_canny, bc_canny], axis=-1).astype(np.float32)
+    mask = (rgb_can == 1).any(2)
+    rgb_can = np.concatenate([rgb_can, mask[:, :, np.newaxis]], axis=2)
+
+    ax.imshow(hr, origin="lower", cmap=cc.cm.CET_L1)
+    ax.imshow(rgb_can, origin="lower")
+
+    cmap = mpl.colors.ListedColormap([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+    norm = mpl.colors.BoundaryNorm([0, 1, 2, 4], cmap.N)
+    cbar = plt.colorbar(
+        mappable=mpl.cm.ScalarMappable(cmap=cmap, norm=norm),
+        ax=ax,
+        cmap=cmap,
+        orientation="horizontal",
+    )
+    cbar.ax.get_xaxis().set_ticks([])
+    cbar.ax.set_xlabel("Edges found", rotation=0)
+    for i, label in enumerate(["HR", "SR", "BC"]):
+        cbar.ax.text(
+            (2 * i + 1) / (2 * cmap.N),
+            1.2,
+            label,
+            ha="center",
+            va="center",
+            transform=cbar.ax.transAxes,
+        )
 
 
 def save_pred(
@@ -264,7 +305,7 @@ def save_pred(
 
     fig, [
         [axlr, axbc, axsr, axhr, axgt],
-        [axoff1, axdbc, axdsr, axoff2, axoff3],
+        [axoff1, axdbc, axdsr, axcan, axoff3],
     ] = plt.subplots(2, 5, figsize=(20, 10))
     plt.suptitle(title)
 
@@ -303,7 +344,7 @@ def save_pred(
     axgt.set_ylim(0, gt.shape[0])
     plt.colorbar(mappable=imgt, ax=axgt, label="nT", location="bottom")
 
-    for ax in [axoff1, axoff2, axoff3]:
+    for ax in [axoff1, axoff3]:
         ax.set_axis_off()
 
     _dmax = max(
@@ -327,6 +368,9 @@ def save_pred(
     axdsr.set_title("HR - SR")
     imdsr = axdsr.imshow(hr - sr, **plt_args)
     plt.colorbar(mappable=imdsr, ax=axdsr, label=r"$\Delta$nT", location="bottom")
+
+    axcan.set_title("Canny Edge")
+    plot_canny(axcan, hr, sr, bc, sigma=2)
 
     # lr_ls = ["dataset"]["args"]["hr_line_spacing"] * scale
     plt.savefig(
