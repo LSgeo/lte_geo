@@ -44,15 +44,17 @@ def main():
 
     spec = cfg["test_dataset"]
     dataset = dsets.make(spec["dataset"])
-    dataset = dsets.make(spec["wrapper"], args={"dataset": dataset})
+    wdataset = dsets.make(spec["wrapper"], args={"dataset": dataset})
     # dataset.crop = spec["wrapper"]["args"]["crop"]
     # ^ this should now be handled in .make()
 
     if cfg["limit_to_plots"]:
-        dataset = Subset(dataset, cfg["plot_samples"])
+        swdataset = Subset(wdataset, cfg["plot_samples"])
+    else:
+        swdataset = Subset(wdataset, range(len(wdataset)))
 
     loader = DataLoader(
-        dataset,
+        swdataset,
         batch_size=spec["batch_size"],
         num_workers=cfg.get("num_workers"),
         persistent_workers=bool(cfg.get("num_workers")),
@@ -95,14 +97,13 @@ def main():
         opts["gt"] = None
         opts["set"] = "test"
 
-        dataset.scale = scale
-        dataset.scale_min = scale
-        dataset.scale_max = scale
-        if cfg["limit_to_plots"]:
-            # Not sure how to better handle Subset dataset
-            dataset.dataset.scale = scale
-            dataset.dataset.scale_min = scale
-            dataset.dataset.scale_max = scale
+        # loader.dataset.scale = scale
+        # loader.dataset.scale_min = scale
+        # loader.dataset.scale_max = scale
+        # Loader Subset Wrapper (Dataset)
+        loader.dataset.dataset.scale = scale
+        loader.dataset.dataset.scale_min = scale
+        loader.dataset.dataset.scale_max = scale
 
         results = eval(model, scale, loader, opts, cfg)
         results_dict[f"{scale}x"] = results
