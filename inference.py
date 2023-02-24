@@ -180,7 +180,7 @@ def eval(model, scale, loader, opts, cfg=None, return_grids=False):
             hr = batch["gt"].detach().cpu().squeeze().numpy()
             sr = pred.detach().cpu().squeeze().numpy()
 
-            suffix = opts["ids"][i]
+            suffix = str(loader.dataset.dataset.dataset.m_names[i][1], "utf-8")
             if opts["mag"]:
                 geo_d = "mag"
             elif opts["grv"]:
@@ -212,6 +212,7 @@ def eval(model, scale, loader, opts, cfg=None, return_grids=False):
                 prefix=geo_d,
                 suffix=suffix,
                 cfg=cfg,
+                extra=f"T{opts['ids'][i]}",
             )
 
     if return_grids:
