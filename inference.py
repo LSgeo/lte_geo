@@ -243,8 +243,18 @@ def plot_canny(ax, hr, sr, bc, sigma=1.0):
     ax.imshow(hr, origin="lower", cmap=cc.cm.CET_L1)
     ax.imshow(rgb_can, origin="lower")
 
-    cmap = mpl.colors.ListedColormap([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
-    norm = mpl.colors.BoundaryNorm([0, 1, 2, 4], cmap.N)
+    cmap = mpl.colors.ListedColormap(
+        [  # H, S, B
+            [1, 0, 0],  # HR
+            [0, 1, 0],  # SR
+            [0, 0, 1],  # BC
+            [1, 1, 0],  # HR + SR
+            [0, 1, 1],  # SR + BC
+            [1, 0, 1],  # HR + BC
+            [1, 1, 1],  # HR + SR + BC
+        ]
+    )
+    norm = mpl.colors.BoundaryNorm([0, 1, 2, 4, 5, 6, 7, 8], cmap.N)
     cbar = plt.colorbar(
         mappable=mpl.cm.ScalarMappable(cmap=cmap, norm=norm),
         ax=ax,
@@ -252,8 +262,8 @@ def plot_canny(ax, hr, sr, bc, sigma=1.0):
         orientation="horizontal",
     )
     cbar.ax.get_xaxis().set_ticks([])
-    cbar.ax.set_xlabel("Edges found", rotation=0)
-    for i, label in enumerate(["HR", "SR", "BC"]):
+    cbar.ax.set_xlabel("Edges", rotation=0)
+    for i, label in enumerate(["HR", "SR", "BC", "HR&SR", "SR&BC", "HR&BC", "All"]):
         cbar.ax.text(
             (2 * i + 1) / (2 * cmap.N),
             1.2,
@@ -278,7 +288,7 @@ def save_pred(
     cfg=None,
 ):
     Path(save_path).mkdir(parents=True, exist_ok=True)
-    title = f"{prefix}_{suffix}{extra}{scale}x.png"
+    title = f"{prefix}_{suffix}_{extra}_{scale}x.png"
     norm = Norm(
         clip_min=cfg["test_dataset"]["dataset"]["args"]["norm"][0],
         clip_max=cfg["test_dataset"]["dataset"]["args"]["norm"][1],
@@ -303,13 +313,12 @@ def save_pred(
         interpolation="nearest",
     )
 
-    fig, [
-        [axlr, axbc, axsr, axhr, axgt],
-        [axoff1, axdbc, axdsr, axcan, axoff3],
-    ] = plt.subplots(2, 5, figsize=(20, 10))
+    fig, [axgt, axlr, axbc, axsr, axhr, axdbc, axdsr, axcan] = plt.subplots(
+        1, 8, figsize=(30, 5), constrained_layout=True
+    )
     plt.suptitle(title)
 
-    axlr.set_title("LR")
+    axlr.set_title("Low Resolution")
     imlr = axlr.imshow(lr, **plt_args)
     plt.colorbar(mappable=imlr, ax=axlr, label="nT", location="bottom")
 
@@ -317,35 +326,64 @@ def save_pred(
     imbc = axbc.imshow(bc, **plt_args)
     plt.colorbar(mappable=imbc, ax=axbc, label="nT", location="bottom")
 
-    axsr.set_title("SR")
+    axsr.set_title("Super-Resolution")
     imsr = axsr.imshow(sr, **plt_args)
     plt.colorbar(mappable=imsr, ax=axsr, label="nT", location="bottom")
 
-    axhr.set_title("HR")
+    axhr.set_title("High Resolution")
     imhr = axhr.imshow(hr, **plt_args)
     plt.colorbar(mappable=imhr, ax=axhr, label="nT", location="bottom")
 
-    axgt.set_title("GT")
-    plt_args.pop("vmin")
-    plt_args.pop("vmax")
-    plt_args["cmap"] = cc.cm.CET_L1
-    imgt = axgt.imshow(gt, **plt_args)
-    axgt.vlines(
+    for ax in [axlr, axbc, axsr, axhr, axdbc, axdsr, axcan]:
+        ax.set_xlabel("x (cells)")
+        ax.set_ylabel("y (cells)")
+        ax.tick_params(axis="x", labelrotation=270)
+    axgt.tick_params(axis="x", labelrotation=270)
+
+    axgt.set_title("Ground Truth")
+    mask = np.zeros_like(gt)
+    mask[
+        :: int(cfg["test_dataset"]["dataset"]["args"]["sample_spacing"]),
+        :: int(cfg["test_dataset"]["dataset"]["args"]["hr_line_spacing"] * scale),
+    ] = 1
+    cgry = axgt.imshow(
+        gt,
+        cmap=cc.cm.CET_L1,
+        interpolation="nearest",
+        origin="lower",
+        extent=(0, 4000, 0, 4000),
+    )
+    cclr = axgt.imshow(
+        gt,
+        cmap=cc.cm.CET_L8,
+        interpolation="nearest",
+        origin="lower",
+        extent=(0, 4000, 0, 4000),
+        alpha=mask,
+    )
+    plt.colorbar(mappable=cgry, ax=axgt, location="bottom", label="Unsampled TMI (nT)")
+    plt.colorbar(mappable=cclr, ax=axgt, location="bottom", label="Sampled TMI (nT)")
+    axgt.set_ylim(0, gt.shape[0] * 20)
+    axgt.set_xlabel("x (km)")
+    axgt.set_ylabel("y (km)")
+    axgt.set_xticks(
         range(
             0,
-            gt.shape[1],
-            cfg["test_dataset"]["dataset"]["args"]["hr_line_spacing"] * scale,
-        ),
-        0,
-        gt.shape[0],
-        color="r",
-        linewidth=1,
-    )  # hr_line spacing * scale !!!
-    axgt.set_ylim(0, gt.shape[0])
-    plt.colorbar(mappable=imgt, ax=axgt, label="nT", location="bottom")
-
-    for ax in [axoff1, axoff3]:
-        ax.set_axis_off()
+            gt.shape[1] * 20 + 1,
+            cfg["test_dataset"]["dataset"]["args"]["hr_line_spacing"] * scale * 20,
+        )
+    )
+    # axgt.vlines(
+    #     range(
+    #         0,
+    #         gt.shape[1],
+    #         cfg["test_dataset"]["dataset"]["args"]["hr_line_spacing"] * scale,
+    #     ),
+    #     0,
+    #     gt.shape[0],
+    #     color="r",
+    #     linewidth=1,
+    # )  # hr_line spacing * scale !!!
 
     _dmax = max(
         # abs((hr - sr).min()),
@@ -361,16 +399,16 @@ def save_pred(
         vmin=-_dmax,
         vmax=_dmax,
     )
-    axdbc.set_title("HR - BC")
+    axdbc.set_title("Bicubic Residual")
     imdbc = axdbc.imshow(hr - bc, **plt_args)
     plt.colorbar(mappable=imdbc, ax=axdbc, label=r"$\Delta$nT", location="bottom")
 
-    axdsr.set_title("HR - SR")
+    axdsr.set_title("Super-resolution Residual")
     imdsr = axdsr.imshow(hr - sr, **plt_args)
     plt.colorbar(mappable=imdsr, ax=axdsr, label=r"$\Delta$nT", location="bottom")
 
-    axcan.set_title("Canny Edge")
-    plot_canny(axcan, hr, sr, bc, sigma=2)
+    axcan.set_title("Canny Edges")
+    plot_canny(axcan, hr, sr, bc, sigma=2.5)
 
     # lr_ls = ["dataset"]["args"]["hr_line_spacing"] * scale
     plt.savefig(
