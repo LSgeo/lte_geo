@@ -58,6 +58,7 @@ def main():
         batch_size=spec["batch_size"],
         num_workers=cfg.get("num_workers"),
         persistent_workers=bool(cfg.get("num_workers")),
+        shuffle=False,
         pin_memory=True,
     )
 
@@ -116,8 +117,8 @@ def main():
         )
 
         if cfg["custom_grids"]:
-            opts["set"] = "Custom"
-            results = test_custom_data(model, scale, opts)
+            opts["set"] = "custom"
+            results = test_custom_data(model, scale, opts, cfg=cfg)
             custom_results_dict[f"{scale}x - Custom"] = results
             pbar_m.write(f"Naprstek {scale}x scale - Mean:")
             pbar_m.write(
@@ -180,7 +181,11 @@ def eval(model, scale, loader, opts, cfg=None, return_grids=False):
             hr = batch["gt"].detach().cpu().squeeze().numpy()
             sr = pred.detach().cpu().squeeze().numpy()
 
-            suffix = str(loader.dataset.dataset.dataset.m_names[i][1], "utf-8")
+            if opts["set"] == "custom":
+                suffix = opts["set"]
+            else:
+                suffix = str(loader.dataset.dataset.dataset.m_names[i][1], "utf-8")
+
             if opts["mag"]:
                 geo_d = "mag"
             elif opts["grv"]:
@@ -444,8 +449,8 @@ def plt_results(results, opts):
     ax2.set_ylim(0.0, 0.04)
     # ax2.invert_yaxis()
     plt.savefig(
-        Path(opts["save_path"]) / f"0_Scale_Averaged_Metrics_{opts['set']}_new-lim.png",
-        dpi=300,
+        Path(opts["save_path"]) / f"0_Scale_Averaged_Metrics_{opts['set']}.png",
+        dpi=600,
     )
 
 
