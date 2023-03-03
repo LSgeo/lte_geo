@@ -14,20 +14,32 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader, Subset
 from torch.optim.lr_scheduler import MultiStepLR
 from torch.cuda.amp import autocast, GradScaler
-import numpy
+import numpy as np
 
 import datasets
 import models
 import utils
 from test import reshape, eval_psnr
+from mlnoddy.datasets import load_noddy_csv
 
 
 def make_data_loader(spec, tag=""):
     if spec is None:
         return None
 
-    dataset = datasets.make(spec["dataset"])
-    dataset = datasets.make(spec["wrapper"], args={"dataset": dataset})
+    noddylist = set(load_noddy_csv(spec["dataset"]["args"]["noddylist"]))
+    blocklist = set(load_noddy_csv(spec["dataset"]["args"]["blocklist"]))
+    m_names_precompute = [his for his in noddylist if his not in blocklist]
+    m_names_precompute = np.array(m_names_precompute).astype(np.string_)
+
+    dataset = datasets.make(
+        spec["dataset"],
+        args={"m_names_precompute": m_names_precompute},
+    )
+    dataset = datasets.make(
+        spec["wrapper"],
+        args={"dataset": dataset},
+    )
     log(f"{tag} dataset:")
     if "preview" in tag:
         dataset = Subset(dataset, config["plot_samples"])
@@ -49,7 +61,7 @@ def make_data_loader(spec, tag=""):
     loader = DataLoader(
         dataset,
         batch_size=bs,
-        shuffle=(tag == "train"),
+        shuffle=False,  # (tag == "train"),
         num_workers=num_workers,
         persistent_workers=bool(num_workers),
         pin_memory=True,
@@ -116,12 +128,7 @@ def train(train_loader, model, optimizer, epoch, scaler):
     train_loss = utils.Averager()
     metric_fn = utils.calc_psnr
 
-    num_dataset = config.get("train_dataset")["dataset"]["args"]["limit_length"]
-    iter_per_epoch = int(
-        num_dataset
-        / config.get("train_dataset")["batch_size"]
-        * config.get("train_dataset")["dataset"]["args"]["repeat"]
-    )
+    iter_per_epoch = len(train_loader)
     iteration = 0
     for batch in tqdm(train_loader, leave=False, desc="Train iteration"):
         c_exp.set_step(iteration + (iter_per_epoch * (epoch - 1)))
@@ -225,7 +232,7 @@ def main(config_, save_path):
     config = config_
     c_exp = Experiment(disabled=not config["use_comet"])
     torch.manual_seed(21)
-    numpy.random.seed(21)
+    np.random.seed(21)
     random.seed(21)
     torch.use_deterministic_algorithms(False)
     torch.backends.cudnn.benchmark = False
@@ -250,7 +257,7 @@ def main(config_, save_path):
     epoch_save = config.get("epoch_save")
     max_val_v = -1e18
 
-    tags = ["Reproducible"]
+    tags = []
     tags.extend(["amp_scaler"] if config.get("use_amp_scaler") else [])
     tags.extend(["amp_autocast"] if config.get("use_amp_autocast") else [])
     scale_tags = [
