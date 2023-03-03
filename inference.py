@@ -2,10 +2,13 @@ from functools import partial
 from pathlib import Path
 
 import colorcet as cc
+import harmonica as hm
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import xarray as xr
+import xrft
 import yaml
 from PIL import Image
 from skimage.feature import canny
@@ -136,6 +139,20 @@ def main():
     plt_results(results_dict, opts)
 
     return results_dict
+
+
+def verde_nvd(grid, order=1):
+    """Vertical derivative with order n using Verde."""
+
+    grid = xr.DataArray(
+        grid,
+        coords={"northing": range(grid.shape[1]), "easting": range(grid.shape[0])},
+        dims=["northing", "easting"],
+    )
+    pad_width = {"easting": grid.shape[1] // 3, "northing": grid.shape[0] // 3}
+    grid_padded = xrft.pad(grid, pad_width)
+    deriv_upward = hm.derivative_upward(grid_padded, order)
+    return xrft.unpad(deriv_upward, pad_width).values
 
 
 def eval(model, scale, loader, opts, cfg=None, return_grids=False):
@@ -414,9 +431,10 @@ def save_pred(
     imdsr = axdsr.imshow(hr - sr, **plt_args)
     plt.colorbar(mappable=imdsr, ax=axdsr, label=r"$\Delta$nT", location="bottom")
 
-    axcan.set_title("Canny Edges")
-    plot_canny(axcan, hr, sr, bc, sigma=2.5)
-
+    # axcan.set_title("Canny Edges")
+    # plot_canny(axcan, hr, sr, bc, sigma=2.5)
+    imcan = axcan.imshow(verde_nvd(sr)[5:-5, 5:-5], origin="lower", cmap=cc.cm.CET_L1)
+    plt.colorbar(mappable=imcan, ax=axcan, label="1VD", location="bottom")
     # lr_ls = ["dataset"]["args"]["hr_line_spacing"] * scale
     plt.savefig(
         Path(save_path) / (title),
