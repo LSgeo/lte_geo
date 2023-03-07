@@ -76,7 +76,7 @@ def eval_psnr(
     l1_res = utils.Averager()
     val_res = utils.Averager()
 
-    pbar = tqdm(loader, leave=False, desc="test")
+    pbar = tqdm(loader, leave=False, desc="Eval")
     for i, batch in enumerate(pbar):
         loader.dataset.scale = torch.randint(
             low=loader.dataset.scale_min,

@@ -173,6 +173,7 @@ def train_with_fake_epochs(
     preview_loader,
     epoch_start,
     lr_scheduler,
+    save_path,
 ):
     """If we use the 1M noddy set, we don't use epochs. Instead,
     we iterate the dataset and trigger "epoch behaviour" every n steps.
@@ -188,19 +189,18 @@ def train_with_fake_epochs(
     epoch_val = config.get("epoch_val")
     epoch_save = config.get("epoch_save")
 
-    def fake_epoch_start(new_epoch, epoch_pbar):
+    def fake_epoch_start(new_epoch):
         """"""
         t_epoch_start = timer.t()
-        log_info = [f"epoch {new_epoch}/{epoch_max}"]
+        log_info = [f"\nepoch {new_epoch}/{epoch_max}"]
         c_exp.set_epoch(new_epoch)
-        epoch_pbar.update()
-        return t_epoch_start, log_info
+        return new_epoch, t_epoch_start, log_info
 
-    def fake_epoch_end(curr_epoch, max_val_v):
+    def fake_epoch_end(curr_epoch, train_loss_itm, max_val_v):
         """"""
-        log_info.append(f"train: loss={train_loss:.4f}")
-        c_exp.log_metric("L1 loss Train", train_loss)
-        # writer.add_scalars('loss', {'train': train_loss}, epoch)
+        log_info.append(f"train: loss={train_loss_itm:.4f}")
+        c_exp.log_metric("L1 loss Train", train_loss_itm)
+        # writer.add_scalars('loss', {'train': train_loss_itm}, epoch)
 
         writer.add_scalar("lr", optimizer.param_groups[0]["lr"], curr_epoch)
         if lr_scheduler is not None:
@@ -271,13 +271,15 @@ def train_with_fake_epochs(
 
     # iteration = (epoch - 1) * iter_per_epoch + i
     epoch = epoch_start
-    epoch_pbar = tqdm(total=config.get("epoch_max"), desc="Epoch", unit="epoch")
+    epoch_pbar = tqdm(
+        total=config.get("epoch_max"), desc="Epoch", leave=True, unit="epoch"
+    )
 
     for iteration, batch in enumerate(
-        tqdm(train_loader, leave=False, desc="Train iteration")
+        tqdm(train_loader, leave=True, desc="Train iteration")
     ):
         if iteration % iter_per_epoch == 0:
-            t_epoch_start, log_info = fake_epoch_start(epoch, epoch_pbar)
+            epoch, t_epoch_start, log_info = fake_epoch_start(epoch)
         c_exp.set_step(iteration)
 
         model.train()
@@ -313,8 +315,9 @@ def train_with_fake_epochs(
         c_exp.log_metric("L1 loss Train", loss_item)
         c_exp.log_metric("PSNR Train", psnr_item)
 
-        if iteration % iter_per_epoch == 0:
+        if (iteration > 0) and (iteration % iter_per_epoch == 0):
             max_val_v = fake_epoch_end(epoch, train_loss.item(), max_val_v)
+            epoch_pbar.update()
 
     epoch_pbar.close()
 
@@ -370,6 +373,7 @@ def main(config_, save_path):
         preview_loader,
         epoch_start,
         lr_scheduler,
+        save_path,
     )
 
 
