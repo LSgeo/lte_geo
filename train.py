@@ -61,7 +61,7 @@ def make_data_loader(spec, tag=""):
     loader = DataLoader(
         dataset,
         batch_size=bs,
-        shuffle=False,  # (tag == "train"),
+        shuffle=(tag == "train"),
         num_workers=num_workers,
         persistent_workers=bool(num_workers),
         pin_memory=True,
