@@ -122,69 +122,6 @@ def prepare_training():
     return model, optimizer, epoch_start, lr_scheduler
 
 
-def train(train_loader, model, optimizer, epoch, scaler):
-    model.train()
-    loss_fn = nn.L1Loss()
-    train_loss = utils.Averager()
-    metric_fn = utils.calc_psnr
-
-    iter_per_epoch = len(train_loader)
-    iteration = 0
-    for batch in tqdm(train_loader, leave=False, desc="Train iteration"):
-        c_exp.set_step(iteration + (iter_per_epoch * (epoch - 1)))
-        # Set scale for next batch
-        # train_loader.dataset.scale = torch.randint(
-        #     low=train_loader.dataset.scale_min,
-        #     high=train_loader.dataset.scale_max + 1,
-        #     size=(1,),
-        # )
-        # while train_loader.dataset.scale == 7:  # or (self.scale == 8: # if cs_fac=5)
-        #     train_loader.dataset.scale = torch.randint(
-        #         low=train_loader.dataset.scale_min,
-        #         high=train_loader.dataset.scale_max + 1,
-        #         size=(1,),
-        #     )
-        #     print(f"set scale to {train_loader.dataset.scale} instead of 7")
-        # c_exp.log_metric("Batch scale", train_loader.dataset.scale)
-
-        for k, v in batch.items():
-            batch[k] = v.to("cuda", non_blocking=True)
-
-        with autocast(enabled=config.get("use_amp_autocast", False)):
-            pred = model(batch["inp"], batch["coord"], batch["cell"])
-            loss = loss_fn(pred, batch["gt"])
-            psnr = metric_fn(
-                pred,
-                batch["gt"],
-                rgb_range=config.get("rgb_range"),
-                shave=config.get("shave"),
-            )
-
-        scaler.scale(loss).backward()
-        # loss.backward()
-        scaler.step(optimizer)  # .step()
-        scaler.update()
-        optimizer.zero_grad(set_to_none=True)
-
-        loss_item = loss.item()
-        psnr_item = psnr.item()
-
-        train_loss.add(loss_item)
-
-        # tensorboard
-        writer.add_scalars(
-            "loss", {"train": loss_item}, (epoch - 1) * iter_per_epoch + iteration
-        )
-        writer.add_scalars(
-            "psnr", {"train": psnr_item}, (epoch - 1) * iter_per_epoch + iteration
-        )
-        c_exp.log_metric("L1 loss Train", loss_item)
-        c_exp.log_metric("PSNR Train", psnr_item)
-        iteration += 1
-
-    return train_loss.item()
-
-
 def log_images(loader, model, c_exp: Experiment):
     model.eval()
     with torch.no_grad():
@@ -227,6 +164,163 @@ def log_images(loader, model, c_exp: Experiment):
                     )
 
 
+def train_with_fake_epochs(
+    train_loader,
+    model,
+    optimizer,
+    scaler,
+    val_loader,
+    preview_loader,
+    epoch_start,
+    lr_scheduler,
+):
+    """If we use the 1M noddy set, we don't use epochs. Instead,
+    we iterate the dataset and trigger "epoch behaviour" every n steps.
+    i.e. run validation, save model, adjust LR schedule etc.
+    """
+
+    ngpus = len(os.environ["CUDA_VISIBLE_DEVICES"].split(","))
+    max_val_v = -1e18
+    iter_per_epoch = int(len(train_loader) // config["epoch_max"])
+    timer = utils.Timer()
+
+    epoch_max = config["epoch_max"]
+    epoch_val = config.get("epoch_val")
+    epoch_save = config.get("epoch_save")
+
+    def fake_epoch_start(new_epoch, epoch_pbar):
+        """"""
+        t_epoch_start = timer.t()
+        log_info = [f"epoch {new_epoch}/{epoch_max}"]
+        c_exp.set_epoch(new_epoch)
+        epoch_pbar.update()
+        return t_epoch_start, log_info
+
+    def fake_epoch_end(curr_epoch, max_val_v):
+        """"""
+        log_info.append(f"train: loss={train_loss:.4f}")
+        c_exp.log_metric("L1 loss Train", train_loss)
+        # writer.add_scalars('loss', {'train': train_loss}, epoch)
+
+        writer.add_scalar("lr", optimizer.param_groups[0]["lr"], curr_epoch)
+        if lr_scheduler is not None:
+            c_exp.log_metric("LR", lr_scheduler.get_last_lr())
+            lr_scheduler.step()
+
+        if ngpus > 1:
+            model_ = model.module
+        else:
+            model_ = model
+        model_spec = config["model"]
+        model_spec["sd"] = model_.state_dict()
+        optimizer_spec = config["optimizer"]
+        optimizer_spec["sd"] = optimizer.state_dict()
+        scaler_spec = {"sd": scaler.state_dict()}
+        sv_file = {
+            "model": model_spec,
+            "optimizer": optimizer_spec,
+            "epoch": curr_epoch,
+            "scaler": scaler_spec,
+        }
+
+        # Save every epoch as "-last"
+        torch.save(sv_file, save_path / f"{c_exp.get_name()}_epoch-last.pth")
+
+        # Save every n epoch as "epoch-n" checkpoint
+        if (epoch_save is not None) and (curr_epoch % epoch_save == 0):
+            torch.save(
+                sv_file, save_path / f"{c_exp.get_name()}_epoch-{curr_epoch}.pth"
+            )
+
+        # Run Validation, and save best model
+        if (epoch_val is not None) and (curr_epoch % epoch_val == 0):
+            if ngpus > 1 and (config.get("eval_bsize") is not None):
+                model_ = model.module
+            else:
+                model_ = model
+
+            val_l1, val_res = eval_psnr(
+                val_loader,
+                model_,
+                eval_type=config.get("eval_type"),
+                eval_bsize=config.get("eval_bsize"),
+                c_exp=c_exp,
+                shave=6,
+            )
+
+            log_images(preview_loader, model_, c_exp)
+
+            log_info.append(f"val: psnr={val_res:.4f}")
+            c_exp.log_metric("L1 loss Val", val_l1)
+            c_exp.log_metric("PSNR Val", val_res)
+            # writer.add_scalars('psnr', {'val': val_res}, curr_epoch)
+            if val_res > max_val_v:
+                max_val_v = val_res
+                torch.save(sv_file, save_path / f"{c_exp.get_name()}_epoch-best.pth")
+
+        t = timer.t()
+        prog = (epoch - epoch_start + 1) / (epoch_max - epoch_start + 1)
+        t_epoch = utils.time_text(t - t_epoch_start)
+        t_elapsed, t_all = utils.time_text(t), utils.time_text(t / prog)
+        log_info.append(f"{t_epoch} {t_elapsed}/{t_all}")
+
+        log(", ".join(log_info))
+        writer.flush()
+
+        return max_val_v
+
+    # iteration = (epoch - 1) * iter_per_epoch + i
+    epoch = epoch_start
+    epoch_pbar = tqdm(total=config.get("epoch_max"), desc="Epoch", unit="epoch")
+
+    for iteration, batch in enumerate(
+        tqdm(train_loader, leave=False, desc="Train iteration")
+    ):
+        if iteration % iter_per_epoch == 0:
+            t_epoch_start, log_info = fake_epoch_start(epoch, epoch_pbar)
+        c_exp.set_step(iteration)
+
+        model.train()
+        loss_fn = nn.L1Loss()
+        train_loss = utils.Averager()
+        metric_fn = utils.calc_psnr
+
+        for k, v in batch.items():
+            batch[k] = v.to("cuda", non_blocking=True)
+
+        with autocast(enabled=config.get("use_amp_autocast", False)):
+            pred = model(batch["inp"], batch["coord"], batch["cell"])
+            loss = loss_fn(pred, batch["gt"])
+            psnr = metric_fn(
+                pred,
+                batch["gt"],
+                rgb_range=config.get("rgb_range"),
+                shave=config.get("shave"),
+            )
+
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)  # .step()
+        scaler.update()
+        optimizer.zero_grad(set_to_none=True)
+
+        loss_item = loss.item()
+        psnr_item = psnr.item()
+        train_loss.add(loss_item)
+
+        # tensorboard
+        writer.add_scalars("loss", {"train": loss_item}, iteration)
+        writer.add_scalars("psnr", {"train": psnr_item}, iteration)
+        c_exp.log_metric("L1 loss Train", loss_item)
+        c_exp.log_metric("PSNR Train", psnr_item)
+
+        if iteration % iter_per_epoch == 0:
+            max_val_v = fake_epoch_end(epoch, train_loss.item(), max_val_v)
+
+    epoch_pbar.close()
+
+    return None
+
+
 def main(config_, save_path):
     global config, log, writer, c_exp
     config = config_
@@ -252,11 +346,6 @@ def main(config_, save_path):
     if n_gpus > 1:
         model = nn.parallel.DataParallel(model)
 
-    epoch_max = config["epoch_max"]
-    epoch_val = config.get("epoch_val")
-    epoch_save = config.get("epoch_save")
-    max_val_v = -1e18
-
     tags = []
     tags.extend(["amp_scaler"] if config.get("use_amp_scaler") else [])
     tags.extend(["amp_autocast"] if config.get("use_amp_autocast") else [])
@@ -272,78 +361,16 @@ def main(config_, save_path):
     c_exp.log_parameters(flatten_dict(config))
     c_exp.log_code("datasets/noddyverse.py")
 
-    timer = utils.Timer()
-    epoch_pbar = tqdm(range(epoch_start, epoch_max + 1), desc="Epoch")
-    for epoch in epoch_pbar:
-        t_epoch_start = timer.t()
-        log_info = [f"epoch {epoch}/{epoch_max}"]
-        c_exp.set_epoch(epoch)
-
-        train_loss = train(train_loader, model, optimizer, epoch, scaler)
-
-        log_info.append(f"train: loss={train_loss:.4f}")
-        c_exp.log_metric("L1 loss Train", train_loss)
-        # writer.add_scalars('loss', {'train': train_loss}, epoch)
-
-        writer.add_scalar("lr", optimizer.param_groups[0]["lr"], epoch)
-        c_exp.log_metric("LR", lr_scheduler.get_last_lr())
-        if lr_scheduler is not None:
-            lr_scheduler.step()
-
-        if n_gpus > 1:
-            model_ = model.module
-        else:
-            model_ = model
-        model_spec = config["model"]
-        model_spec["sd"] = model_.state_dict()
-        optimizer_spec = config["optimizer"]
-        optimizer_spec["sd"] = optimizer.state_dict()
-        scaler_spec = {"sd": scaler.state_dict()}
-        sv_file = {
-            "model": model_spec,
-            "optimizer": optimizer_spec,
-            "epoch": epoch,
-            "scaler": scaler_spec,
-        }
-
-        torch.save(sv_file, save_path / f"{c_exp.get_name()}_epoch-last.pth")
-
-        if (epoch_save is not None) and (epoch % epoch_save == 0):
-            torch.save(sv_file, save_path / f"{c_exp.get_name()}_epoch-{epoch}.pth")
-
-        if (epoch_val is not None) and (epoch % epoch_val == 0):
-            if n_gpus > 1 and (config.get("eval_bsize") is not None):
-                model_ = model.module
-            else:
-                model_ = model
-            val_l1, val_res = eval_psnr(
-                val_loader,
-                model_,
-                # data_norm=config["data_norm"],
-                eval_type=config.get("eval_type"),
-                eval_bsize=config.get("eval_bsize"),
-                c_exp=c_exp,
-                shave=6,
-            )
-
-            log_images(preview_loader, model_, c_exp)
-
-            log_info.append(f"val: psnr={val_res:.4f}")
-            c_exp.log_metric("L1 loss Val", val_l1)
-            c_exp.log_metric("PSNR Val", val_res)
-            # writer.add_scalars('psnr', {'val': val_res}, epoch)
-            if val_res > max_val_v:
-                max_val_v = val_res
-                torch.save(sv_file, save_path / f"{c_exp.get_name()}_epoch-best.pth")
-
-        t = timer.t()
-        prog = (epoch - epoch_start + 1) / (epoch_max - epoch_start + 1)
-        t_epoch = utils.time_text(t - t_epoch_start)
-        t_elapsed, t_all = utils.time_text(t), utils.time_text(t / prog)
-        log_info.append(f"{t_epoch} {t_elapsed}/{t_all}")
-
-        log(", ".join(log_info))
-        writer.flush()
+    train_with_fake_epochs(
+        train_loader,
+        model,
+        optimizer,
+        scaler,
+        val_loader,
+        preview_loader,
+        epoch_start,
+        lr_scheduler,
+    )
 
 
 def flatten_dict(cfg, sep=" | "):
