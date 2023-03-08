@@ -293,7 +293,7 @@ def train_with_fake_epochs(
     )
 
     for iteration, batch in enumerate(
-        tqdm(train_loader, leave=True, desc="Train iteration")
+        tqdm(train_loader, leave=True, desc="Train iteration", dynamic_ncols=True)
     ):
         if iteration % iter_per_epoch == 0:
             epoch, t_epoch_start, log_info = fake_epoch_start(epoch)
@@ -381,8 +381,11 @@ def main(config_, save_path):
         )
     ]
     tags.extend(scale_tags)
-    event_tags = [f"{e}" for e in config["train_dataset"]["dataset"]["args"]["events"]]
-    tags.extend(event_tags)
+    if config["train_dataset"]["dataset"]["args"].get("events") is not None:
+        event_tags = [
+            f"{e}" for e in config["train_dataset"]["dataset"]["args"]["events"]
+        ]
+        tags.extend(event_tags)
     c_exp.add_tags(tags)
     c_exp.log_parameters(flatten_dict(config))
     c_exp.log_code("datasets/noddyverse.py")
