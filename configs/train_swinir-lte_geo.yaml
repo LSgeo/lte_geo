@@ -87,6 +87,10 @@ optimizer:
 epoch_max: 10
 epoch_val: 1
 epoch_save:
-multi_step_lr:
-  milestones: [2,4,6,8,9]
-  gamma: 0.5
+scheduler:
+  # multi_step_lr:
+  #   milestones: [6,8,9]
+  #   gamma: 0.5
+  one_cycle_lr:
+    max_lr: 4.e-3
+

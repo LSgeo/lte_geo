@@ -12,7 +12,7 @@ import torch.nn as nn
 from pathlib import Path
 from tqdm import tqdm
 from torch.utils.data import DataLoader, Subset
-from torch.optim.lr_scheduler import MultiStepLR
+from torch.optim.lr_scheduler import MultiStepLR, OneCycleLR
 from torch.cuda.amp import autocast, GradScaler
 import numpy as np
 
@@ -35,18 +35,16 @@ def make_data_loader(spec, tag=""):
         event_filter = [any(e in h[0] for e in events) for h in m_names_precompute]
 
     m_names_precompute = np.array(m_names_precompute).astype(np.string_)
+
     if spec["dataset"]["args"]["events"] is not None:  # bool selection only on arr
         m_names_precompute = m_names_precompute[event_filter]
 
     dataset = datasets.make(
-        spec["dataset"],
-        args={"m_names_precompute": m_names_precompute},
+        spec["dataset"], args={"m_names_precompute": m_names_precompute}
     )
-    dataset = datasets.make(
-        spec["wrapper"],
-        args={"dataset": dataset},
-    )
+    dataset = datasets.make(spec["wrapper"], args={"dataset": dataset})
     log(f"{tag} dataset:")
+
     if "preview" in tag:
         dataset = Subset(dataset, config["plot_samples"])
         dataset.dataset.sample_q = None  # Preview full extent
@@ -61,6 +59,7 @@ def make_data_loader(spec, tag=""):
         num_workers = config.get("num_workers")
         log(f"  Scale range: {dataset.scale_min} to {dataset.scale_max}")
     log(f"  Size: {len(dataset)}")
+
     for k, v in dataset[0].items():
         log("  {}: shape={}".format(k, tuple(v.shape)))
 
@@ -73,9 +72,7 @@ def make_data_loader(spec, tag=""):
         pin_memory=True,
     )
     if "preview" in tag:
-        loader.dataset.dataset.scale = int(
-            config["eval_type"].split("-")[1]
-        )  # default 4
+        loader.dataset.dataset.scale = int(config["eval_type"].split("-")[1])
         c_exp.log_parameter("Preview scale", loader.dataset.dataset.scale)
 
     return loader
@@ -89,7 +86,7 @@ def make_data_loaders():
     return train_loader, val_loader, preview_loader
 
 
-def prepare_training():
+def prepare_training(train_loader):
     if config.get("resume") is not None and config.get("only_resume_weights"):
         # Load saved model but undertake new training
         sv_file = torch.load(config["resume"])
@@ -109,10 +106,17 @@ def prepare_training():
             model.parameters(), sv_file["optimizer"], load_sd=True
         )
         epoch_start = sv_file["epoch"] + 1
-        if config.get("multi_step_lr") is None:
-            lr_scheduler = None
-        else:
+        if config.get("scheduler") == "multi_step_lr":
             lr_scheduler = MultiStepLR(optimizer, **config["multi_step_lr"])
+        elif config.get("scheduler") == "one_cycle_lr":
+            raise NotImplementedError
+            lr_scheduler = OneCycleLR(
+                optimizer,
+                config["scheduler"]["one_cycle_lr"]["max_lr"],
+                total_steps=len(train_loader),
+            )
+        else:
+            lr_scheduler = None
         for _ in range(epoch_start - 1):
             lr_scheduler.step()
     else:
@@ -120,11 +124,16 @@ def prepare_training():
         model = models.make(config["model"]).to("cuda", non_blocking=True)
         optimizer = utils.make_optimizer(model.parameters(), config["optimizer"])
         epoch_start = 1
-        if config.get("multi_step_lr") is None:
-            lr_scheduler = None
-        else:
+        if config.get("scheduler") == "multi_step_lr":
             lr_scheduler = MultiStepLR(optimizer, **config["multi_step_lr"])
-
+        elif config.get("scheduler") == "one_cycle_lr":
+            lr_scheduler = OneCycleLR(
+                optimizer,
+                config["scheduler"]["one_cycle_lr"]["max_lr"],
+                total_steps=len(train_loader),
+            )
+        else:
+            lr_scheduler = None
     log("model: #params={}".format(utils.compute_num_params(model, text=True)))
     return model, optimizer, epoch_start, lr_scheduler
 
@@ -212,7 +221,8 @@ def train_with_fake_epochs(
         writer.add_scalar("lr", optimizer.param_groups[0]["lr"], curr_epoch)
         if lr_scheduler is not None:
             c_exp.log_metric("LR", lr_scheduler.get_last_lr())
-            lr_scheduler.step()
+            if config["scheduler"] == "multi_step_lr":
+                lr_scheduler.step()
 
         if ngpus > 1:
             model_ = model.module
@@ -312,6 +322,9 @@ def train_with_fake_epochs(
         scaler.update()
         optimizer.zero_grad(set_to_none=True)
 
+        if config["scheduler"] == "one_cycle_lr":
+            lr_scheduler.step()
+
         loss_item = loss.item()
         psnr_item = psnr.item()
         train_loss.add(loss_item)
@@ -350,7 +363,7 @@ def main(config_, save_path):
         yaml.dump(config, f, sort_keys=False)
 
     train_loader, val_loader, preview_loader = make_data_loaders()
-    model, optimizer, epoch_start, lr_scheduler = prepare_training()
+    model, optimizer, epoch_start, lr_scheduler = prepare_training(train_loader)
     scaler = GradScaler(enabled=config.get("use_amp_scaler", False))
 
     n_gpus = len(os.environ["CUDA_VISIBLE_DEVICES"].split(","))
