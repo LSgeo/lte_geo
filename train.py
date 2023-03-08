@@ -30,7 +30,13 @@ def make_data_loader(spec, tag=""):
     noddylist = set(load_noddy_csv(spec["dataset"]["args"]["noddylist"]))
     blocklist = set(load_noddy_csv(spec["dataset"]["args"]["blocklist"]))
     m_names_precompute = [his for his in noddylist if his not in blocklist]
+    if spec["dataset"]["args"]["events"] is not None:
+        events = spec["dataset"]["args"]["events"]
+        event_filter = [any(e in h[0] for e in events) for h in m_names_precompute]
+
     m_names_precompute = np.array(m_names_precompute).astype(np.string_)
+    if spec["dataset"]["args"]["events"] is not None:  # bool selection only on arr
+        m_names_precompute = m_names_precompute[event_filter]
 
     dataset = datasets.make(
         spec["dataset"],
@@ -309,7 +315,6 @@ def train_with_fake_epochs(
         psnr_item = psnr.item()
         train_loss.add(loss_item)
 
-        # tensorboard
         writer.add_scalars("loss", {"train": loss_item}, iteration)
         writer.add_scalars("psnr", {"train": psnr_item}, iteration)
         c_exp.log_metric("L1 loss Train", loss_item)
@@ -362,6 +367,8 @@ def main(config_, save_path):
         )
     ]
     tags.extend(scale_tags)
+    event_tags = [f"{e}" for e in config["train_dataset"]["dataset"]["args"]["events"]]
+    tags.extend(event_tags)
     c_exp.add_tags(tags)
     c_exp.log_parameters(flatten_dict(config))
     c_exp.log_code("datasets/noddyverse.py")

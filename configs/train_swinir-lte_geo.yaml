@@ -20,6 +20,7 @@ train_dataset:
       norm: [-5000, 5000]
       load_magnetics: True
       load_gravity: False
+      events: [DYKE]
   wrapper:
     name: noddyverse_wrapper
     args:
@@ -46,6 +47,7 @@ val_dataset:
       norm: [-5000, 5000]
       load_magnetics: True
       load_gravity: False
+      events: [DYKE]
   wrapper:
     name: noddyverse_wrapper
     args:
