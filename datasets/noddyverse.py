@@ -38,10 +38,11 @@ class HRLRNoddyverse(NoddyDataset):
         self.scale = None  # init params
         self.inp_size = kwargs.get("input_size", None)  # set in super init?
         self.crop = None  # set after wrapper
+        self.repeat = repeat
         super().__init__(**kwargs)
 
     def __len__(self):
-        return self.len
+        return self.len * self.repeat  # Repeat dataset like an epoch 
 
     def _subsample(self, raster, ls):
         """Select points from raster according to line spacing"""

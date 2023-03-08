@@ -9,8 +9,8 @@ train_dataset:
   dataset:
     name: noddyverse_dataset
     args:
-      repeat: 1
-      use_dset_slice: [0, 400_000]  # restrict dataset to [n:m]
+      repeat: 1  # number of times to iterate entire dataset - i.e. epochs (but of the below slice)
+      use_dset_slice: [0, 960_000]  # restrict dataset to [n:m]  # ~ 1 hour / 100k samples
       root_path: "C:/Users/Public/scratch/Noddy_1M" #C:/Users/Public/scratch/noddyverse/train
       noddylist: "C:/Users/Public/scratch/Noddy_1M/models.csv"
       blocklist: "C:/Users/Public/scratch/Noddy_10k/models_10k.csv"  # Don't allow use of models in the 10k test set.
@@ -72,7 +72,7 @@ model:
         hidden_list: [256, 256, 256]
     hidden_dim: 256
 
-epoch_max: 10
+epoch_max: 15
 epoch_val: 1
 epoch_save: 4
 optimizer:
@@ -80,8 +80,8 @@ optimizer:
   args:
     lr: 3.e-4
 multi_step_lr:
-  milestones: [1,2,3,4,5,6,7,8,9,10]
-  gamma: 0.75
+  milestones: [3,6,9,12,14]
+  gamma: 0.5
 
 rgb_range: 2  # noddyverse min max clip +-5000
 shave: 6

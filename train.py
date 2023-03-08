@@ -192,7 +192,7 @@ def train_with_fake_epochs(
     def fake_epoch_start(new_epoch):
         """"""
         t_epoch_start = timer.t()
-        log_info = [f"\nepoch {new_epoch}/{epoch_max}"]
+        log_info = [f"epoch {new_epoch}/{epoch_max}"]
         c_exp.set_epoch(new_epoch)
         return new_epoch, t_epoch_start, log_info
 
@@ -264,7 +264,7 @@ def train_with_fake_epochs(
         t_elapsed, t_all = utils.time_text(t), utils.time_text(t / prog)
         log_info.append(f"{t_epoch} {t_elapsed}/{t_all}")
 
-        log(", ".join(log_info))
+        epoch_pbar.write(", ".join(log_info))  # log.write(...)
         writer.flush()
 
         return max_val_v
@@ -318,7 +318,9 @@ def train_with_fake_epochs(
         if (iteration > 0) and (iteration % iter_per_epoch == 0):
             max_val_v = fake_epoch_end(epoch, train_loss.item(), max_val_v)
             epoch_pbar.update()
+            epoch += 1
 
+    epoch_pbar.update()
     epoch_pbar.close()
 
     return None
