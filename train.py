@@ -100,7 +100,7 @@ def prepare_training():
         epoch_start = 1
         lr_scheduler = MultiStepLR(optimizer, **config["multi_step_lr"])
     elif config.get("resume") is not None:
-        # if os.path.exists(config.get("resume")):
+        # Load saved model and continue training
         sv_file = torch.load(config["resume"])
         model = models.make(sv_file["model"], load_sd=True).to(
             "cuda", non_blocking=True
@@ -116,6 +116,7 @@ def prepare_training():
         for _ in range(epoch_start - 1):
             lr_scheduler.step()
     else:
+        # New model, new training
         model = models.make(config["model"]).to("cuda", non_blocking=True)
         optimizer = utils.make_optimizer(model.parameters(), config["optimizer"])
         epoch_start = 1
