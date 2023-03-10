@@ -83,6 +83,7 @@ def main():
     scale_min = spec["wrapper"]["args"]["scale_min"]
     scale_max = spec["wrapper"]["args"]["scale_max"]
 
+    Path(opts['save_path']).mkdir(parents=True, exist_ok=True)
     print(
         f"\nModel: {opts['model_path'].absolute()}\n"
         f"Saving to: {opts['save_path'].absolute()}"
@@ -311,7 +312,6 @@ def save_pred(
     prefix="pred",
     cfg=None,
 ):
-    Path(save_path).mkdir(parents=True, exist_ok=True)
     title = f"{prefix}_{suffix}_{extra}_{scale}x.png"
     norm = Norm(
         clip_min=cfg["test_dataset"]["dataset"]["args"]["norm"][0],
