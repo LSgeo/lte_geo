@@ -194,10 +194,6 @@ class HRLRNoddyverse(NoddyDataset):
         # if _DEBUG:
         #     plt.close()
 
-    def __getitem__(self, index):
-        self._process(index)
-        return self.data
-
 
 @register("noddyverse_wrapper")
 class NoddyverseWrapper(Dataset):
