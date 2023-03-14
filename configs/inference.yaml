@@ -7,8 +7,13 @@ eval_bsize: 360_000 #360_000 # Reduce RAM usage? num points per model call
 limit_to_plots: True  # subset dataset to "interesting" plots, OR don't plot and calc metrics
 plot_samples: [[17, 20, 70, 91, 143, 185, 199, 200], [0, 1]]
 custom_grids: False
-eval_bsize: 360_000 # Reduce RAM usage? num points per model call
-real_inference_size: 128
+
+do_real_inference: True
+# real_inference_path: U:/RTIO_Grids_1A/AngeloNorth_TMI_60m.ers 
+real_inference_path: D:/luke/data_source/P1134/P1134-grid-tmi.ers 
+real_inference_scale: 6
+real_inference_size: 15 # use same as training scale size
+# LR tile size ^ aka train inp_size
 
 test_dataset:
   batch_size: 1
@@ -31,4 +36,3 @@ test_dataset:
       inp_size: 45
       scale_min: 1
       scale_max: 9
-  batch_size: 1

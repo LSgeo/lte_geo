@@ -676,17 +676,13 @@ if __name__ == "__main__":
     with open("configs/inference.yaml", "r") as f:
         cfg = yaml.load(f, Loader=yaml.FullLoader)
 
-    scale = 4
-    filepath = r"D:/luke/data_source/P1134/P1134-grid-tmi.ers"
-    # filepath = r"//uniwa.uwa.edu.au/userhome/Students7/22905007/Downloads/Grids_1A/AngeloNorth_TMI_80m.ers"
-    filepath = Path(filepath)
-
-    do = 1  # 1 for synthetic, 2 for real inference
-
-    if do == 1:
+    if not cfg["do_real_inference"]:
         results = main()
 
-    if do == 2:
+    if cfg["do_real_inference"]:
+        # filepath = r"//uniwa.uwa.edu.au/userhome/Students7/22905007/Downloads/Grids_1A/AngeloNorth_TMI_80m.ers"
+        filepath = Path(cfg["real_inference_path"])
+        scale = cfg["real_inference_scale"]
         sr = real_inference(
             filepath=filepath,
             cfg=cfg,
@@ -695,8 +691,16 @@ if __name__ == "__main__":
             # device="cuda"
         )
 
-        plt.imshow(sr, origin="lower")
-        plt.colorbar()
+        # plt.imshow(sr, origin="lower")
+        # plt.colorbar()
+
+        out_file = Path(cfg["inference_output_dir"] or "inference") / (
+            f"{filepath.stem}_sr-"
+            f"{scale}x_"
+            f"{cfg['model_name']}_"
+            f"{cfg['real_inference_size']}"
+            ".tif"
+        )
 
         with rasterio.open(filepath) as src:
             pred_meta = src.meta
@@ -711,8 +715,10 @@ if __name__ == "__main__":
             )
 
             with rasterio.open(
-                f"{filepath.stem}_sr-{scale}x_{cfg['model_name']}.tif",
+                out_file,
                 "w",
                 **pred_meta,
             ) as dst:
                 dst.write(sr.astype(rasterio.float32), 1)
+
+            print(f"Saved to {out_file.absolute()}")
