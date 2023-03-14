@@ -162,6 +162,7 @@ def verde_nvd(grid, order=1):
     return xrft.unpad(deriv_upward, pad_width).values
 
 
+@torch.no_grad()
 def eval(model, scale, loader, opts, cfg=None, return_grids=False):
     model.eval()
 
@@ -572,6 +573,7 @@ def test_custom_data(model, scale, opts, cfg=None):
         return eval(model, scale, loader, opts, cfg=cfg)
 
 
+@torch.no_grad()
 def real_inference(filepath: Path, cfg, scale: float, device="cuda", max_s=128):
     """Run inference on square (only?) grid data without GT.
     Provide cfg as used for training/testing - at least model_dir & model_name.
