@@ -462,14 +462,16 @@ def plt_results(results, opts):
         dtype=float,
     )
 
+    hr_ls = cfg["test_dataset"]["dataset"]["args"]["hr_line_spacing"] * 20
     fig, ax1 = plt.subplots(constrained_layout=True, figsize=(8, 5))
     ax2 = ax1.twinx()
-    plt.title(
-        f"Mean metrics - Set: {opts['set']} - Model: {opts['model_name']}"
-    )  # - Data: {opts['geo_d']}")
-    ax1.set_xlabel("Scale Factor")
+    plt.title(f"Mean metrics - Set: {opts['set']} - Model: {opts['model_name']}")
+    # - Data: {opts['geo_d']}")
+
     ax1.plot(nlp[:, 0], nlp[:, 2], "r-")
     ax2.plot(nlp[:, 0], nlp[:, 1], "b--")
+    ax1.set_xlabel("Line spacing [Scale Factor]")
+    ax1.set_xticks(nlp[:, 0], [f"{hr_ls * s} m [{s}x]" for s in nlp[:, 0]])
     ax1.set_ylabel("PSNR", color="red")
     ax2.set_ylabel("Mean Absolute Error", color="blue")
     ax1.set_ylim(30, 80)
