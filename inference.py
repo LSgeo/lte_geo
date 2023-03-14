@@ -19,7 +19,7 @@ import datasets as dsets
 import models
 import utils
 from test import reshape, batched_predict
-from mlnoddy.datasets import parse_geophysics, Norm
+from mlnoddy.datasets import parse_geophysics, load_noddy_csv, Norm
 
 import rasterio
 import tifffile
@@ -51,8 +51,14 @@ def main():
     # dataset.crop = spec["wrapper"]["args"]["crop"]
     # ^ this should now be handled in .make()
 
+    plot_samples = []
+    plot_samples.extend(cfg["plot_samples"][0])
+    plot_samples.extend(
+        list(range(cfg["plot_samples"][1][0], cfg["plot_samples"][1][1]))
+    )
+
     if cfg["limit_to_plots"]:
-        swdataset = Subset(wdataset, cfg["plot_samples"])
+        swdataset = Subset(wdataset, plot_samples)
     else:
         swdataset = Subset(wdataset, range(len(wdataset)))
 
@@ -72,18 +78,18 @@ def main():
         save_path=Path(cfg["inference_output_dir"] or f"inference/{model_name}"),
         rgb_range=cfg["rgb_range"],
         shave_factor=3,  # pixels to shave (edges may include NaN)
-        ids=cfg["plot_samples"],  # Sample IDs
+        ids=plot_samples,  # Sample IDs
         mag=cfg["test_dataset"]["dataset"]["args"]["load_magnetics"],
         grv=cfg["test_dataset"]["dataset"]["args"]["load_gravity"],
         eval_bsize=cfg["eval_bsize"],
         limit_to_plots=cfg["limit_to_plots"],
-        gt_list=cfg["test_dataset"]["dataset"]["args"]["root_path"],
+        gt_list=cfg["test_dataset"]["dataset"]["args"]["noddylist"],
     )
 
     scale_min = spec["wrapper"]["args"]["scale_min"]
     scale_max = spec["wrapper"]["args"]["scale_max"]
 
-    Path(opts['save_path']).mkdir(parents=True, exist_ok=True)
+    Path(opts["save_path"]).mkdir(parents=True, exist_ok=True)
     print(
         f"\nModel: {opts['model_path'].absolute()}\n"
         f"Saving to: {opts['save_path'].absolute()}"
@@ -98,7 +104,7 @@ def main():
         opts["shave"] = scale * opts["shave_factor"]
 
         # lazy way to reset custom grid opts
-        opts["ids"] = cfg["plot_samples"]
+        opts["ids"] = plot_samples
         opts["gt"] = None
         opts["set"] = "test"
 
@@ -215,15 +221,17 @@ def eval(model, scale, loader, opts, cfg=None, return_grids=False):
             if opts.get("gt") is not None:
                 gt = opts["gt"].squeeze()
             else:
-                gt_list = Path(opts["gt_list"])
-                gt_list = [Path(str(p)[:-3]) for p in gt_list.glob(f"**/*.{geo_d}.gz")]
-                gt = next(
-                    parse_geophysics(
-                        gt_list[opts["ids"][i]],
-                        mag=opts["mag"],
-                        grv=opts["grv"],
-                    )
+                parent, name = load_noddy_csv(opts["gt_list"])[opts["ids"][i]]
+                # gt_path = [Path(str(p)[:-3]) for p in gt_model.glob(f"**/*.{geo_d}.gz")]
+                f = (
+                    Path(cfg["test_dataset"]["dataset"]["args"]["root_path"])
+                    / parent
+                    / "models_by_code"
+                    / "models"
+                    / parent
+                    / name
                 )
+                gt = next(parse_geophysics(f, mag=opts["mag"], grv=opts["grv"]))
 
             save_pred(
                 lr=lr,
@@ -232,10 +240,10 @@ def eval(model, scale, loader, opts, cfg=None, return_grids=False):
                 gt=gt,
                 scale=scale,
                 save_path=opts["save_path"],
-                prefix=geo_d,
+                prefix=f"T{opts['ids'][i]}",
                 suffix=suffix,
                 cfg=cfg,
-                extra=f"T{opts['ids'][i]}",
+                extra=geo_d,
             )
 
     if return_grids:
@@ -585,8 +593,8 @@ def real_inference(filepath: Path, cfg, scale: float, device="cuda", max_s=128):
 
     # grid = grid[0:200, 0:200]
 
-    if grid.shape[-2] > max_s or grid.shape[-1] > max_s:
-        lr_tiles, tiles_per_row, tiles_per_column = input_tiler(grid, shape=max_s)
+    # if grid.shape[-2] > max_s or grid.shape[-1] > max_s: # untested "off", always need tile/pad
+    lr_tiles, tiles_per_row, tiles_per_column = input_tiler(grid, shape=max_s)
 
     hr_s = max_s * scale
     output_sr = nan_val * np.ones(
