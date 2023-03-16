@@ -24,9 +24,6 @@ from mlnoddy.datasets import load_noddy_csv
 
 
 def make_data_loader(spec, tag=""):
-    if spec is None:
-        return None
-
     noddylist = set(load_noddy_csv(spec["dataset"]["args"]["noddylist"]))
     blocklist = set(load_noddy_csv(spec["dataset"]["args"]["blocklist"]))
     m_names_precompute = [his for his in noddylist if his not in blocklist]

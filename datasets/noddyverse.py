@@ -42,7 +42,7 @@ class HRLRNoddyverse(NoddyDataset):
         super().__init__(**kwargs)
 
     def __len__(self):
-        return self.len * self.repeat  # Repeat dataset like an epoch 
+        return self.len * self.repeat  # Repeat dataset like an epoch
 
     def _subsample(self, raster, ls):
         """Select points from raster according to line spacing"""
@@ -104,23 +104,20 @@ class HRLRNoddyverse(NoddyDataset):
         return np.expand_dims(grid, 0)  # add channel dimension
 
     def _crop(self, grid, extent, scale):
-        if not self.crop:
-            return grid
-        else:
-            lr_e = extent[0] * scale
-            lr_n = extent[1] * scale
-            return grid[
-                :,
-                lr_e : lr_e + scale * self.inp_size,
-                lr_n : lr_n + scale * self.inp_size,
-            ]
+        lr_e = extent[0] * scale
+        lr_n = extent[1] * scale
+        return grid[
+            :,
+            lr_e : lr_e + scale * self.inp_size,
+            lr_n : lr_n + scale * self.inp_size,
+        ]
 
     def _process(self, index, d=180):
         # d is pixels in x, y to crop NAN from (if last row/col not sampled)
         super()._process(index)
 
-        hls = self.sp["hr_line_spacing"]
-        lls = int(hls * self.scale)
+        hls = self.sp["hr_line_spacing"]  # normally set to 4
+        lls = int(hls * self.scale)  # normally set in range(10)
         hr_x, hr_y, hr_z = self._subsample(self.data["gt_grid"], hls)
         lr_x, lr_y, lr_z = self._subsample(self.data["gt_grid"], lls)
 
@@ -129,14 +126,16 @@ class HRLRNoddyverse(NoddyDataset):
         self.data["hr_grid"] = self._grid(hr_x, hr_y, hr_z, ls=hls, d=d)
         self.data["lr_grid"] = self._grid(lr_x, lr_y, lr_z, ls=lls, d=d)
 
-        if self.crop:
-            # We grid lr and hr at their full extent and crop the same patch
-            # hr size is self.inp_size * self.scale
-            # self.inp_size is lr size _after_ cropping
-            # lr_extent is lr grid size _before_ cropping
+        lr_extent = self.data["lr_grid"].shape[-1]
+        # lr_extent = int((d / self.scale) * 4)  # cs_fac = 4
 
-            # lr_extent = int((d / self.scale) * 4)  # cs_fac = 4
-            lr_extent = self.data["lr_grid"].shape[-1]
+        if self.crop:
+            # crop to inp_size, otherwise use full extent
+            # We grid lr and hr at their full extent and crop the same patch
+            # lr_extent is lr size _before_ cropping
+            # lr size is self.inp_size _after_ cropping
+            # hr size is self.inp_size * self.scale
+
             lr_e = int(
                 torch.randint(low=0, high=lr_extent - self.inp_size + 1, size=(1,))
             )
