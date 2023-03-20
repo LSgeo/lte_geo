@@ -310,6 +310,29 @@ def plot_canny(ax, hr, sr, bc, sigma=1.0):
         )
 
 
+def plot_hist(ax: plt.Axes, comparisons: list, suffix: str = "", xrange: int = None):
+    """Plot histogram of grid (e.g. residuals, etc) values"""
+    br = 0  # Remember largest bin range among all samples
+    for sample in comparisons:
+        _, bins, _ = ax.hist(
+            sample[0].flatten(),
+            bins=100,
+            log=True,
+            histtype="step",
+            label=sample[1],
+            color=sample[2],
+        )
+        br = np.ceil(np.max((np.abs(bins[0]), np.abs(bins[-1]), br)))
+    ax.axvline(0, c="k", ls="--", lw=1)
+    ax.set_xlabel(f"{suffix} (nT)")
+    ax.set_ylabel("Occurences")
+    plt.legend()
+    if xrange:
+        ax.set_xlim(-xrange, xrange)
+    else:
+        ax.set_xlim(-br, br)
+
+
 def save_pred(
     lr,
     sr,
@@ -369,7 +392,7 @@ def save_pred(
     imhr = axhr.imshow(hr, **plt_args)
     plt.colorbar(mappable=imhr, ax=axhr, label="nT", location="bottom")
 
-    for ax in [axlr, axbc, axsr, axhr, axdbc, axdsr, axcan]:
+    for ax in [axlr, axbc, axsr, axhr, axdbc, axdsr]:  # axcan
         ax.set_xlabel("x (cells)")
         ax.set_ylabel("y (cells)")
         ax.tick_params(axis="x", labelrotation=270)
@@ -442,10 +465,18 @@ def save_pred(
     imdsr = axdsr.imshow(hr - sr, **plt_args)
     plt.colorbar(mappable=imdsr, ax=axdsr, label=r"$\Delta$nT", location="bottom")
 
-    # axcan.set_title("Canny Edges")
+    axcan.set_title("Histogram of residuals")
     # plot_canny(axcan, hr, sr, bc, sigma=2.5)
-    imcan = axcan.imshow(verde_nvd(sr)[5:-5, 5:-5], origin="lower", cmap=cc.cm.CET_L1)
-    plt.colorbar(mappable=imcan, ax=axcan, label="1VD", location="bottom")
+    plot_hist(
+        axcan,
+        [
+            [hr - sr, "SR", "g"],
+            [hr - bc, "LR Bicubic", "b"],
+        ],
+        "residual",
+    )
+    # imcan = axcan.imshow(verde_nvd(sr)[5:-5, 5:-5], origin="lower", cmap=cc.cm.CET_L1)
+    # plt.colorbar(mappable=imcan, ax=axcan, label="1VD", location="bottom")
     # lr_ls = ["dataset"]["args"]["hr_line_spacing"] * scale
     plt.savefig(
         Path(save_path) / (title),
