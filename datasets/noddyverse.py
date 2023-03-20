@@ -8,6 +8,8 @@ from mlnoddy.datasets import NoddyDataset
 from datasets import register
 from utils import to_pixel_samples
 
+rng = np.random.default_rng(21)
+
 
 @register("noddyverse_dataset")
 class HRLRNoddyverse(NoddyDataset):
@@ -32,7 +34,10 @@ class HRLRNoddyverse(NoddyDataset):
         self.sp = {
             "hr_line_spacing": kwargs.get("hr_line_spacing", 1),
             "sample_spacing": kwargs.get("sample_spacing", 1),
-            "heading": kwargs.get("heading", None),  # Default will be random
+            "heading": kwargs.get("heading", "NS"),  # "EW" untested
+            "noise": kwargs.get(
+                "noise", {"gaussian": None, "geology": None, "levelling": None}
+            ),
         }
         kwargs["model_dir"] = root_path
         self.scale = None  # init params
@@ -49,16 +54,38 @@ class HRLRNoddyverse(NoddyDataset):
         # input_cell_size = 20 # Noddyverse cell size is 20 m
         ss = self.sp["sample_spacing"]  # Sample every n points along line
 
-        xx, yy = np.meshgrid(
+        x, y = np.meshgrid(
             np.arange(raster.shape[-1]),  # x, cols
             np.arange(raster.shape[-2]),  # y, rows
             indexing="xy",
         )
-        xx = xx[::ss, ::ls]
-        yy = yy[::ss, ::ls]
-        z = raster.numpy()[:, ::ss, ::ls].squeeze()  # shape for gridding
+        x = x[::ss, ::ls]
+        y = y[::ss, ::ls]
+        vals = raster.numpy()[:, ::ss, ::ls].squeeze()  # shape for gridding
+        # self.og_vals = vals
+        # self.noise = np.zeros_like(vals)
 
-        return xx, yy, z
+        # Data are normalised to +-1 by this time.
+        r = vals.max() - vals.min()  # 2  # config "rgb_range"
+        if self.sp["noise"]["gaussian"] is not None:  # Sensor noise
+            noise = (
+                rng.normal(scale=0.25, size=vals.shape)
+                * r
+                * self.sp["noise"]["gaussian"]
+            )
+            # self.noise += noise
+            vals += noise
+
+        # if self.sp["noise"]["geology"] is not None:
+        # Regional geology noise effect is accounted for in Noddyverse
+
+        if self.sp["noise"]["levelling"] is not None:  # Line levelling
+            for val_col in vals.T:  # noise_col, zip( ,self.noise.T)
+                noise = rng.normal(scale=0.25) * r * self.sp["noise"]["levelling"]
+                # noise_col += noise
+                val_col += noise
+
+        return x, y, vals
 
     def _grid(self, x, y, z, ls, cs_fac=4, d=180):
         """Min Curvature grid xyz at scale, with ls/cs_fac cell size.

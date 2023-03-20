@@ -29,6 +29,10 @@ test_dataset:
       load_magnetics: True # Norm [+-5000]
       load_gravity: False # Norm [400,500]
       norm: [-5000,5000]
+      noise: # 3 sources of noise, decimal % of norm range
+        gaussian: 0.15 # 0.3 #  noise applied to all cells
+        levelling: 0.1 # 0.2 # noise applied to sampled columns in array (sample lines)
+        # geology: 0.05 #  gradient applied to grid. Not implemented.
   wrapper:
     name: noddyverse_wrapper
     args:
