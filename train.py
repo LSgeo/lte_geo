@@ -415,13 +415,13 @@ def flatten_dict(cfg, sep=" | "):
                                         flat_dict[
                                             f"{k0}{sep}{k1}{sep}{k2}{sep}{k3}{sep}{k4}"
                                         ] = v4
-                                except:
+                                except AttributeError:
                                     flat_dict[f"{k0}{sep}{k1}{sep}{k2}{sep}{k3}"] = v3
-                        except:
+                        except AttributeError:
                             flat_dict[f"{k0}{sep}{k1}{sep}{k2}"] = v2
-                except:
+                except AttributeError:
                     flat_dict[f"{k0}{sep}{k1}"] = v1
-        except:
+        except AttributeError:
             flat_dict[f"{k0}"] = v0
 
     return flat_dict
