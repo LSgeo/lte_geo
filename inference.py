@@ -92,14 +92,15 @@ def main():
     Path(opts["save_path"]).mkdir(parents=True, exist_ok=True)
     print(
         f"\nModel: {opts['model_path'].absolute()}\n"
-        f"Saving to: {opts['save_path'].absolute()}"
+        f"Saving to: {opts['save_path'].absolute()}\n"
+        f"Scales: {scale_min}x to {scale_max}x"
     )
 
     # Do Inference ###
     results_dict = {}
     custom_results_dict = {}
     pbar_m = tqdm(range(scale_min, scale_max + 1))
-    for scale in pbar_m:
+    for scale in pbar_m:  # Scale loop
         pbar_m.set_description(f"{scale}x scale")
         opts["shave"] = scale * opts["shave_factor"]
 
@@ -111,6 +112,7 @@ def main():
         # loader.dataset.scale = scale
         # loader.dataset.scale_min = scale
         # loader.dataset.scale_max = scale
+
         # Loader Subset Wrapper (Dataset)
         loader.dataset.dataset.scale = scale
         loader.dataset.dataset.scale_min = scale
@@ -201,7 +203,7 @@ def eval(model, scale, loader, opts, cfg=None, return_grids=False):
             f"Mean: L1: {l1_avg.item():.4f}, PSNR: {psnr_avg.item():.4f}"
         )
 
-        if opts["limit_to_plots"]:
+        if opts["limit_to_plots"]:  # Don't spend time plotting the FULL test set
             lr = batch["inp"].detach().cpu().squeeze().numpy()
             hr = batch["gt"].detach().cpu().squeeze().numpy()
             sr = pred.detach().cpu().squeeze().numpy()
@@ -351,7 +353,7 @@ def save_pred(
     )
     plt.suptitle(title)
 
-    axlr.set_title("Low Resolution")
+    axlr.set_title("Low-resolution")
     imlr = axlr.imshow(lr, **plt_args)
     plt.colorbar(mappable=imlr, ax=axlr, label="nT", location="bottom")
 
@@ -359,11 +361,11 @@ def save_pred(
     imbc = axbc.imshow(bc, **plt_args)
     plt.colorbar(mappable=imbc, ax=axbc, label="nT", location="bottom")
 
-    axsr.set_title("Super-Resolution")
+    axsr.set_title("Super-resolution")
     imsr = axsr.imshow(sr, **plt_args)
     plt.colorbar(mappable=imsr, ax=axsr, label="nT", location="bottom")
 
-    axhr.set_title("High Resolution")
+    axhr.set_title("High-resolution")
     imhr = axhr.imshow(hr, **plt_args)
     plt.colorbar(mappable=imhr, ax=axhr, label="nT", location="bottom")
 
@@ -463,14 +465,14 @@ def plt_results(results, opts):
     )
 
     hr_ls = cfg["test_dataset"]["dataset"]["args"]["hr_line_spacing"] * 20
-    fig, ax1 = plt.subplots(constrained_layout=True, figsize=(8, 5))
+    fig, ax1 = plt.subplots(constrained_layout=True, figsize=(15, 6))
     ax2 = ax1.twinx()
     plt.title(f"Mean metrics - Set: {opts['set']} - Model: {opts['model_name']}")
     # - Data: {opts['geo_d']}")
 
     ax1.plot(nlp[:, 0], nlp[:, 2], "r-")
     ax2.plot(nlp[:, 0], nlp[:, 1], "b--")
-    ax1.set_xlabel("Line spacing [Scale Factor]")
+    ax1.set_xlabel("Input line spacing [Scale Factor]")
     ax1.set_xticks(nlp[:, 0], [f"{hr_ls * s} m [{s}x]" for s in nlp[:, 0]])
     ax1.set_ylabel("PSNR", color="red")
     ax2.set_ylabel("Mean Absolute Error", color="blue")
