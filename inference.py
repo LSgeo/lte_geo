@@ -280,7 +280,7 @@ def plot_canny(ax, hr, sr, bc, sigma=1.0):
     ax.imshow(rgb_can, origin="lower")
 
     cmap = mpl.colors.ListedColormap(
-        [  # H, S, B
+        [  # HR SR BC
             [1, 0, 0],  # HR
             [0, 1, 0],  # SR
             [0, 0, 1],  # BC
@@ -331,6 +331,40 @@ def plot_hist(ax: plt.Axes, comparisons: list, suffix: str = "", xrange: int = N
         ax.set_xlim(-xrange, xrange)
     else:
         ax.set_xlim(-br, br)
+
+
+def plot_gt(ax: plt.Axes, gt: np.ndarray, args: dict, scale: int = 1):
+    """Plot ground truth grid with indication of line sampled data
+    TODO: Indicate Cropping of GT!!! Extent is currently WRONG
+    """
+    mask = np.zeros_like(gt)
+    mask[:: int(args["sample_spacing"]), :: int(args["hr_line_spacing"] * scale)] = 1
+    cgry = ax.imshow(
+        gt,
+        cmap=cc.cm.CET_L1,
+        interpolation="nearest",
+        origin="lower",
+        extent=(0, 4000, 0, 4000),
+    )
+    cclr = ax.imshow(
+        gt,
+        cmap=cc.cm.CET_L8,
+        interpolation="nearest",
+        origin="lower",
+        extent=(0, 4000, 0, 4000),
+        alpha=mask,
+    )
+    plt.colorbar(mappable=cgry, ax=ax, location="bottom", label="Unsampled TMI (nT)")
+    plt.colorbar(mappable=cclr, ax=ax, location="bottom", label="Sampled TMI (nT)")
+    ax.set_ylim(0, gt.shape[0] * 20)
+    ax.set_xlabel("x (m)")
+    ax.set_ylabel("y (m)")
+    ax.set_xticks(range(0, gt.shape[1] * 20 + 1, args["hr_line_spacing"] * scale * 20))
+    ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(20 * 4 * scale * args["hr_line_spacing"]))
+    ax.xaxis.set_major_formatter('{x:.0f}')
+    ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(5 * 4 * scale * args["hr_line_spacing"]))
+    ax.tick_params(axis="x", labelrotation=270)
+    # axgt.vlines(range(0, gt.shape[1], args["hr_line_spacing"] * scale),0,gt.shape[0],color="r",linewidth=1,)  # hr_line spacing * scale !!!
 
 
 def save_pred(
@@ -396,52 +430,9 @@ def save_pred(
         ax.set_xlabel("x (cells)")
         ax.set_ylabel("y (cells)")
         ax.tick_params(axis="x", labelrotation=270)
-    axgt.tick_params(axis="x", labelrotation=270)
 
     axgt.set_title("Ground Truth")
-    mask = np.zeros_like(gt)
-    mask[
-        :: int(cfg["test_dataset"]["dataset"]["args"]["sample_spacing"]),
-        :: int(cfg["test_dataset"]["dataset"]["args"]["hr_line_spacing"] * scale),
-    ] = 1
-    cgry = axgt.imshow(
-        gt,
-        cmap=cc.cm.CET_L1,
-        interpolation="nearest",
-        origin="lower",
-        extent=(0, 4000, 0, 4000),
-    )
-    cclr = axgt.imshow(
-        gt,
-        cmap=cc.cm.CET_L8,
-        interpolation="nearest",
-        origin="lower",
-        extent=(0, 4000, 0, 4000),
-        alpha=mask,
-    )
-    plt.colorbar(mappable=cgry, ax=axgt, location="bottom", label="Unsampled TMI (nT)")
-    plt.colorbar(mappable=cclr, ax=axgt, location="bottom", label="Sampled TMI (nT)")
-    axgt.set_ylim(0, gt.shape[0] * 20)
-    axgt.set_xlabel("x (km)")
-    axgt.set_ylabel("y (km)")
-    axgt.set_xticks(
-        range(
-            0,
-            gt.shape[1] * 20 + 1,
-            cfg["test_dataset"]["dataset"]["args"]["hr_line_spacing"] * scale * 20,
-        )
-    )
-    # axgt.vlines(
-    #     range(
-    #         0,
-    #         gt.shape[1],
-    #         cfg["test_dataset"]["dataset"]["args"]["hr_line_spacing"] * scale,
-    #     ),
-    #     0,
-    #     gt.shape[0],
-    #     color="r",
-    #     linewidth=1,
-    # )  # hr_line spacing * scale !!!
+    plot_gt(axgt, gt, cfg["test_dataset"]["dataset"]["args"], scale=scale)
 
     _dmax = max(
         # abs((hr - sr).min()),
