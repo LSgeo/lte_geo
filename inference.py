@@ -179,7 +179,7 @@ def eval(model, scale, loader, opts, cfg=None, return_grids=False):
     )
     psnr_avg = utils.Averager()
 
-    pbar = tqdm(loader, leave=False, desc="Test")
+    pbar = tqdm(loader, leave=False, desc="Test", disable=opts.get("no_tqdm"))
     for i, batch in enumerate(pbar):
         inp = batch["inp"].to("cuda", non_blocking=True)
         coord = batch["coord"].to("cuda", non_blocking=True)
@@ -253,7 +253,11 @@ def eval(model, scale, loader, opts, cfg=None, return_grids=False):
         return {
             "L1": l1_avg.item(),
             "PSNR": psnr_avg.item(),
-            "grids": dict(lr=lr, hr=hr, sr=sr, gt=gt),
+            "grids": dict(
+                lr=batch["inp"].detach().cpu().squeeze().numpy(),
+                hr=batch["gt"].detach().cpu().squeeze().numpy(),
+                sr=pred.detach().cpu().squeeze().numpy(),
+            ),
         }
     else:
         return {
@@ -542,9 +546,10 @@ def load_real_data(p):
         grid = tifffile.imread(p)
     else:
         try:
-            grid = rasterio.open(p).read().squeeze()
+            with rasterio.open(p) as src:
+                grid = src.read().squeeze()
         except Exception as e:
-            raise e
+            raise NotImplementedError(f"Cannot load {p} as rasterio dataset: {e}")
 
     return torch.from_numpy(grid).unsqueeze(0)  # add channel dim
 

@@ -23,7 +23,7 @@ class HRLRNoddyverse(NoddyDataset):
 
     def __init__(
         self,
-        root_path,
+        root_path=None,
         split_file=None,
         split_key=None,
         first_k=None,
@@ -32,7 +32,7 @@ class HRLRNoddyverse(NoddyDataset):
         **kwargs,
     ):
         self.sp = {
-            "hr_line_spacing": kwargs.get("hr_line_spacing", 1),
+            "hr_line_spacing": kwargs.get("hr_line_spacing", 4),
             "sample_spacing": kwargs.get("sample_spacing", 1),
             "heading": kwargs.get("heading", "NS"),  # "EW" untested
             "noise": kwargs.get(

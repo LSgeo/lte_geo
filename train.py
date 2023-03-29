@@ -20,13 +20,14 @@ import datasets
 import models
 import utils
 from test import reshape, eval_psnr
-from mlnoddy.datasets import load_noddy_csv
+from mlnoddy.datasets import load_noddy_allow_list
 
 
 def make_data_loader(spec, tag=""):
-    noddylist = set(load_noddy_csv(spec["dataset"]["args"]["noddylist"]))
-    blocklist = set(load_noddy_csv(spec["dataset"]["args"]["blocklist"]))
-    m_names_precompute = [his for his in noddylist if his not in blocklist]
+    m_names_precompute = load_noddy_allow_list(
+        spec["dataset"]["args"]["noddylist"],
+        spec["dataset"]["args"]["blocklist"],
+    )
     if spec["dataset"]["args"]["events"] is not None:
         events = spec["dataset"]["args"]["events"]
         event_filter = [any(e in h[0] for e in events) for h in m_names_precompute]
@@ -43,7 +44,7 @@ def make_data_loader(spec, tag=""):
     log(f"{tag} dataset:")
 
     if "preview" in tag:
-        dataset = Subset(dataset, config["plot_samples"])
+        dataset = Subset(dataset, range(config["plot_samples"][0], config["plot_samples"][1] )
         dataset.dataset.sample_q = None  # Preview full extent
         bs = 1
         num_workers = 1
