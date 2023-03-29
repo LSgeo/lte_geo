@@ -20,26 +20,10 @@ import datasets
 import models
 import utils
 from test import reshape, eval_psnr
-from mlnoddy.datasets import load_noddy_allow_list
 
 
 def make_data_loader(spec, tag=""):
-    m_names_precompute = load_noddy_allow_list(
-        spec["dataset"]["args"]["noddylist"],
-        spec["dataset"]["args"]["blocklist"],
-    )
-    if spec["dataset"]["args"]["events"] is not None:
-        events = spec["dataset"]["args"]["events"]
-        event_filter = [any(e in h[0] for e in events) for h in m_names_precompute]
-
-    m_names_precompute = np.array(m_names_precompute).astype(np.string_)
-
-    if spec["dataset"]["args"]["events"] is not None:  # bool selection only on arr
-        m_names_precompute = m_names_precompute[event_filter]
-
-    dataset = datasets.make(
-        spec["dataset"], args={"m_names_precompute": m_names_precompute}
-    )
+    dataset = datasets.make(spec["dataset"])
     dataset = datasets.make(spec["wrapper"], args={"dataset": dataset})
     log(f"{tag} dataset:")
 
