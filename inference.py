@@ -696,6 +696,91 @@ def input_tiler(grid: torch.Tensor, shape=128):
     return lr_tiles, tiles_per_row, tiles_per_column
 
 
+def stack_permutations(cfg, sample_id: int = 143, n: int = 50, scale: int = 4):
+    """super resolve a grid with n different noise permutations"""
+
+    model, model_name, model_paths = load_model(cfg)
+    spec = cfg["test_dataset"]
+
+    sr_stack = []
+    for _ in tqdm(range(n), desc="Permuting"):
+        dataset = dsets.make(spec["dataset"])
+        loader = DataLoader(
+            Subset(dsets.make(spec["wrapper"], args={"dataset": dataset}), [sample_id]),
+            pin_memory=True,
+        )
+
+        loader.dataset.dataset.scale = scale
+        loader.dataset.dataset.scale_min = scale
+        loader.dataset.dataset.scale_max = scale
+
+        opts = dict(
+            set="Permutations",
+            ids=[sample_id],  # Sample IDs
+            limit_to_plots=False,
+            model_name=model_name,
+            model_path=model_paths[0],
+            # save_path=Path(cfg["inference_output_dir"] or f"inference/{model_name}"),
+            rgb_range=cfg["rgb_range"],
+            shave=scale * 3,
+            # mag=cfg["test_dataset"]["dataset"]["args"]["load_magnetics"],
+            # grv=cfg["test_dataset"]["dataset"]["args"]["load_gravity"],
+            eval_bsize=cfg["eval_bsize"],
+            gt_list=cfg["test_dataset"]["dataset"]["args"]["noddylist"],
+            no_tqdm=True,  # hide inner progress bar spam
+        )
+
+        results = eval(model, scale, loader, opts, cfg, return_grids=True)
+        sr_stack.append(results["grids"]["sr"])
+
+    return np.stack(sr_stack)
+
+
+def vis_permutations(stack):
+    """Make some plots woohoo"""
+
+    def norm(d):
+        return (d - np.min(d)) / (np.max(d) - np.min(d))
+
+    rgb_stack = np.stack(
+        (
+            norm(np.std(stack, axis=0)),
+            norm(np.std(stack, axis=0)),
+            norm(np.mean(stack, axis=0)),
+        ),
+        axis=-1,
+    )
+    plt.imshow(rgb_stack)
+    plt.show()
+
+    fig, [ax1, ax2] = plt.subplots(1, 2)
+    ax1.imshow(np.mean(stack, axis=0))
+    ax2.imshow(np.std(stack, axis=0))
+    plt.show()
+
+    import copy
+
+    for p in [stack[1]]:
+        c = canny(p, sigma=1, low_threshold=0.1, high_threshold=0.2)
+        rgb = np.stack(
+            [copy.deepcopy(c), copy.deepcopy(c), copy.deepcopy(c)], axis=-1
+        ).astype(np.float32)
+        mask = (rgb == 1).any(2)
+        rgb[0] *= np.random.normal(0.5, 0.3)
+        rgb[1] *= np.random.normal(0.5, 0.2)
+        rgb[2] *= np.random.normal(0.5, 0.1)
+        rgba = np.concatenate([rgb, mask[:, :, np.newaxis]], axis=2)
+
+        plt.imshow(stack[0], cmap=cc.cm.CET_L1)
+        plt.colorbar()
+        plt.imshow(rgba)
+        plt.show()
+
+    from scipy.stats import wasserstein_distance as wdist
+
+    wdist(stack[0].flatten(), stack[1].flatten())
+
+
 if __name__ == "__main__":
     with open("configs/inference.yaml", "r") as f:
         cfg = yaml.load(f, Loader=yaml.FullLoader)
