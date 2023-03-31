@@ -33,7 +33,7 @@ def load_model(cfg, device="cuda", best_or_last="last"):
     model_paths = list(model_dir.glob(f"**/*{model_name}*{best_or_last}.pth"))
     if len(model_paths) != 1:
         raise FileNotFoundError(
-            f"No unique model found in {model_dir} for *{model_name}*{best_or_last}.pth."
+            f"No unique model found in {model_dir.absolute()} for *{model_name}*{best_or_last}.pth."
         )
 
     model_spec = torch.load(model_paths[0], map_location=device)["model"]

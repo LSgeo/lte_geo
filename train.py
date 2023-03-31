@@ -12,7 +12,7 @@ import torch.nn as nn
 from pathlib import Path
 from tqdm import tqdm
 from torch.utils.data import DataLoader, Subset
-from torch.optim.lr_scheduler import MultiStepLR, OneCycleLR
+from torch.optim.lr_scheduler import MultiStepLR
 from torch.cuda.amp import autocast, GradScaler
 import numpy as np
 
@@ -28,7 +28,9 @@ def make_data_loader(spec, tag=""):
     log(f"{tag} dataset:")
 
     if "preview" in tag:
-        dataset = Subset(dataset, range(config["plot_samples"][0], config["plot_samples"][1] )
+        dataset = Subset(
+            dataset, range(config["plot_samples"][0], config["plot_samples"][1])
+        )
         dataset.dataset.sample_q = None  # Preview full extent
         bs = 1
         num_workers = 1
@@ -69,38 +71,35 @@ def make_data_loaders():
 
 
 def prepare_training(train_loader):
-    if config.get("resume") is not None and config.get("only_resume_weights"):
-        # Load saved model but undertake new training
-        sv_file = torch.load(config["resume"])
-        model = models.make(sv_file["model"], load_sd=True).to(
-            "cuda", non_blocking=True
-        )
-        optimizer = utils.make_optimizer(model.parameters(), config["optimizer"])
-        epoch_start = 1
-        lr_scheduler = MultiStepLR(optimizer, **config["multi_step_lr"])
-    elif config.get("resume") is not None:
-        # Load saved model and continue training
-        sv_file = torch.load(config["resume"])
-        model = models.make(sv_file["model"], load_sd=True).to(
-            "cuda", non_blocking=True
-        )
-        optimizer = utils.make_optimizer(
-            model.parameters(), sv_file["optimizer"], load_sd=True
-        )
-        epoch_start = sv_file["epoch"] + 1
-        if config.get("scheduler") == "multi_step_lr":
-            lr_scheduler = MultiStepLR(optimizer, **config["multi_step_lr"])
-        elif config.get("scheduler") == "one_cycle_lr":
-            raise NotImplementedError
-            lr_scheduler = OneCycleLR(
-                optimizer,
-                config["scheduler"]["one_cycle_lr"]["max_lr"],
-                total_steps=len(train_loader),
+    if config.get("resume") is not None:
+        # Find and load saved model
+        best_or_last = "last"
+        model_dir = Path(config["model_dir"])
+        model_name = config["resume"]
+        model_paths = list(model_dir.glob(f"**/*{model_name}*{best_or_last}.pth"))
+        if len(model_paths) != 1:
+            raise FileNotFoundError(
+                f"No unique model found in {model_dir.absolute()}"
+                f"for *{model_name}*{best_or_last}.pth."
             )
-        else:
-            lr_scheduler = None
-        for _ in range(epoch_start - 1):
-            lr_scheduler.step()
+        resume = model_paths[0]
+        sv_file = torch.load(resume)
+        model = models.make(sv_file["model"], load_sd=True).to(
+            "cuda", non_blocking=True
+        )
+        if config.get("only_resume_weights"):  # Start "new" training
+            optimizer = utils.make_optimizer(model.parameters(), config["optimizer"])
+            epoch_start = 1
+            lr_scheduler = MultiStepLR(optimizer, **config["multi_step_lr"])
+        else:  # Resume training
+            optimizer = utils.make_optimizer(
+                model.parameters(), sv_file["optimizer"], load_sd=True
+            )
+            epoch_start = sv_file["epoch"] + 1
+            if config.get("scheduler") == "multi_step_lr":
+                lr_scheduler = MultiStepLR(optimizer, **config["multi_step_lr"])
+            # for _ in range(epoch_start - 1): # TODO check if MSLR needs this
+            #     lr_scheduler.step()
     else:
         # New model, new training
         model = models.make(config["model"]).to("cuda", non_blocking=True)
@@ -108,12 +107,6 @@ def prepare_training(train_loader):
         epoch_start = 1
         if config.get("scheduler") == "multi_step_lr":
             lr_scheduler = MultiStepLR(optimizer, **config["multi_step_lr"])
-        elif config.get("scheduler") == "one_cycle_lr":
-            lr_scheduler = OneCycleLR(
-                optimizer,
-                config["scheduler"]["one_cycle_lr"]["max_lr"],
-                total_steps=len(train_loader),
-            )
         else:
             lr_scheduler = None
     log("model: #params={}".format(utils.compute_num_params(model, text=True)))
@@ -143,7 +136,7 @@ def log_images(loader, model, c_exp: Experiment):
             for j in range(len(batch["gt"])):  # should always be 1, but is handled
                 _min = gt[j].min().item()
                 _max = gt[j].max().item()
-                plot_name = f"sample_{config['plot_samples'][i]:03d}"
+                plot_name = f"sample_{range(config['plot_samples'][0],config['plot_samples'][1])[i]:03d}"
                 c_exp.log_image(
                     image_data=pred[j].squeeze().numpy(),
                     name=plot_name + "_sr",
