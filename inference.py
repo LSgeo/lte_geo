@@ -26,6 +26,12 @@ import tifffile
 from datasets.noddyverse import HRLRNoddyverse, NoddyverseWrapper
 from datasets.noddyverse import load_naprstek_synthetic as load_naprstek
 
+mpl.rcParams["font.size"] = 8.0
+mpl.rcParams["figure.dpi"] = 600
+# mpl.rcParams["figure.figsize"] = (4.3, 3.3)
+mpl.rcParams["figure.constrained_layout.use"] = True
+mpl.rcParams["image.origin"] = "lower"
+
 
 def load_model(cfg, device="cuda", best_or_last="last"):
     model_dir = Path(cfg["model_dir"])
@@ -348,14 +354,14 @@ def plot_gt(ax: plt.Axes, gt: np.ndarray, args: dict, scale: int = 1):
         cmap=cc.cm.CET_L1,
         interpolation="nearest",
         origin="lower",
-        extent=(0, 4000, 0, 4000),
+        extent=(0, 180 * 20, 0, 180 * 20),
     )
     cclr = ax.imshow(
         gt,
         cmap=cc.cm.CET_L8,
         interpolation="nearest",
         origin="lower",
-        extent=(0, 4000, 0, 4000),
+        extent=(0, 180 * 20, 0, 180 * 20),
         alpha=mask,
     )
     plt.colorbar(mappable=cgry, ax=ax, location="bottom", label="Unsampled TMI (nT)")
@@ -364,10 +370,14 @@ def plot_gt(ax: plt.Axes, gt: np.ndarray, args: dict, scale: int = 1):
     ax.set_xlabel("x (m)")
     ax.set_ylabel("y (m)")
     ax.set_xticks(range(0, gt.shape[1] * 20 + 1, args["hr_line_spacing"] * scale * 20))
-    ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(20 * 4 * scale * args["hr_line_spacing"]))
-    ax.xaxis.set_major_formatter('{x:.0f}')
-    ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(5 * 4 * scale * args["hr_line_spacing"]))
-    ax.tick_params(axis="x", labelrotation=270)
+    ax.xaxis.set_major_locator(
+        mpl.ticker.MultipleLocator(20 * 4 * scale * args["hr_line_spacing"])
+    )
+    ax.xaxis.set_major_formatter("{x:.0f}")
+    ax.xaxis.set_minor_locator(
+        mpl.ticker.MultipleLocator(5 * 4 * scale * args["hr_line_spacing"])
+    )
+    ax.tick_params(axis="x", labelrotation=90)
     # axgt.vlines(range(0, gt.shape[1], args["hr_line_spacing"] * scale),0,gt.shape[0],color="r",linewidth=1,)  # hr_line spacing * scale !!!
 
 
@@ -433,7 +443,7 @@ def save_pred(
     for ax in [axlr, axbc, axsr, axhr, axdbc, axdsr]:  # axcan
         ax.set_xlabel("x (cells)")
         ax.set_ylabel("y (cells)")
-        ax.tick_params(axis="x", labelrotation=270)
+        ax.tick_params(axis="x", labelrotation=90)
 
     axgt.set_title("Ground Truth")
     plot_gt(axgt, gt, cfg["test_dataset"]["dataset"]["args"], scale=scale)
@@ -473,10 +483,7 @@ def save_pred(
     # imcan = axcan.imshow(verde_nvd(sr)[5:-5, 5:-5], origin="lower", cmap=cc.cm.CET_L1)
     # plt.colorbar(mappable=imcan, ax=axcan, label="1VD", location="bottom")
     # lr_ls = ["dataset"]["args"]["hr_line_spacing"] * scale
-    plt.savefig(
-        Path(save_path) / (title),
-        dpi=600,
-    )
+    plt.savefig(Path(save_path) / (title))
     plt.close()
 
 
@@ -507,7 +514,6 @@ def plt_results(results, opts):
     # ax2.invert_yaxis()
     plt.savefig(
         Path(opts["save_path"]) / f"0_Scale_Averaged_Metrics_{opts['set']}.png",
-        dpi=600,
     )
 
 
