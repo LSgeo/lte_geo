@@ -267,17 +267,16 @@ def train_with_fake_epochs(
         total=config.get("epoch_max"), desc="Epoch", leave=True, unit="epoch"
     )
 
-    for iteration, batch in enumerate(
-        tqdm(train_loader, leave=True, desc="Train iteration", dynamic_ncols=True)
-    ):
+    loss_fn = nn.L1Loss()
+    train_loss = utils.Averager()
+    metric_fn = utils.calc_psnr
+
+    for iteration, batch in enumerate(tqdm(train_loader, leave=True, desc="Train iteration", dynamic_ncols=True)):
         if iteration % iter_per_epoch == 0:
             epoch, t_epoch_start, log_info = fake_epoch_start(epoch)
         c_exp.set_step(iteration)
 
         model.train()
-        loss_fn = nn.L1Loss()
-        train_loss = utils.Averager()
-        metric_fn = utils.calc_psnr
 
         for k, v in batch.items():
             batch[k] = v.to("cuda", non_blocking=True)
@@ -296,9 +295,6 @@ def train_with_fake_epochs(
         scaler.step(optimizer)  # .step()
         scaler.update()
         optimizer.zero_grad(set_to_none=True)
-
-        if config["scheduler"] == "one_cycle_lr":
-            lr_scheduler.step()
 
         loss_item = loss.item()
         psnr_item = psnr.item()
