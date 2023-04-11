@@ -16,6 +16,7 @@ class HRLRNoddyverse(NoddyDataset):
     """
     Find a Noddyverse model         - super()._process
     Load the magnetic forward model - super()._process
+    Normalise the GT forward model  - self.norm()
     Sample the forward model points - self._subsample()
     Grid the sampled points         - self._grid()
     Sample the grid points For LTE  - utils.to_pixel_samples()
@@ -101,6 +102,7 @@ class HRLRNoddyverse(NoddyDataset):
             coordinates=np.meshgrid(
                 np.arange(w, e, step=cs),
                 np.arange(s, n, step=cs),
+                indexing="xy",
             ),
         )
         grid = grid.get("forward").values.astype(np.float32)
@@ -145,8 +147,8 @@ class HRLRNoddyverse(NoddyDataset):
 
         hls = self.sp["hr_line_spacing"]  # normally set to 4
         lls = int(hls * self.scale)  # normally set in range(10)
-        hr_x, hr_y, hr_z = self._subsample(self.data["gt_grid"], hls)
-        lr_x, lr_y, lr_z = self._subsample(self.data["gt_grid"], lls)
+        hr_x, hr_y, hr_z = self._subsample(self.norm(self.data["gt_grid"]), hls)
+        lr_x, lr_y, lr_z = self._subsample(self.norm(self.data["gt_grid"]), lls)
 
         # Note - we use scale here as a factor describing how big HR is x LR.
         # I think this diverges from what my brain normally does.
