@@ -139,7 +139,7 @@ def calc_psnr(sr, hr, dataset=None, scale=1, rgb_range=1, shave=None):
             shave = scale + 6
         elif dataset == "noddyverse":
             if not shave:
-                shave = 0
+                shave = scale
                 # TODO figure out what shave is for / what is shaved
         else:
             raise NotImplementedError

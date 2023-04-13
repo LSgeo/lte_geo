@@ -622,8 +622,12 @@ def real_inference(filepath: Path, cfg, scale: float, device="cuda", max_s=128):
     assert filepath.exists(), filepath.absolute()
     nan_val = -99999
 
-    normaliser = Norm(-5000, 5000)
-    norm = normaliser.min_max_clip
+    if normrange := cfg["test_dataset"]["dataset"]["args"]["norm"]:
+        normaliser = Norm(normrange[0], normrange[1])
+        norm = normaliser.min_max_clip
+    else:
+        normaliser = Norm()
+        norm = normaliser.per_sample_norm
     unorm = normaliser.inverse_mmc
 
     model, model_name, _ = load_model(cfg, device)
@@ -789,7 +793,7 @@ def vis_permutations(stack):
 
     from scipy.stats import wasserstein_distance as wdist
 
-    wdist(stack[0].flatten(), stack[1].flatten())
+    print(wdist(stack[0].flatten(), stack[1].flatten()))
 
 
 if __name__ == "__main__":
