@@ -63,6 +63,8 @@ val_dataset:
       scale_max: 4
   batch_size: 8
 
+loss_fn: fsim
+
 model:
   name: lte
   args:

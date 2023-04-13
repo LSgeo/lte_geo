@@ -1,20 +1,21 @@
 # modified from: https://github.com/yinboc/liif
 
 import argparse
-from datetime import datetime
 import os
 import random
+from datetime import datetime
+from pathlib import Path
+import yaml
 
 from comet_ml import Experiment
-import yaml
+import numpy as np
+import piq
 import torch
 import torch.nn as nn
-from pathlib import Path
-from tqdm import tqdm
 from torch.utils.data import DataLoader, Subset
 from torch.optim.lr_scheduler import MultiStepLR
 from torch.cuda.amp import autocast, GradScaler
-import numpy as np
+from tqdm import tqdm
 
 import datasets
 import models
@@ -267,7 +268,12 @@ def train_with_fake_epochs(
         total=config.get("epoch_max"), desc="Epoch", leave=True, unit="epoch"
     )
 
-    loss_fn = nn.L1Loss()
+    if config["loss_fn"] == "l1":
+        loss_fn = nn.L1Loss()
+    elif config["loss_fn"] == "fsim":
+        loss_fn = piq.FSIMLoss(data_range=config["rgb_range"])
+    else:
+        raise ValueError(f"Loss function {config[loss_fn]} not supported")
     train_loss = utils.Averager()
     metric_fn = utils.calc_psnr
 
@@ -302,7 +308,7 @@ def train_with_fake_epochs(
 
         writer.add_scalars("loss", {"train": loss_item}, iteration)
         writer.add_scalars("psnr", {"train": psnr_item}, iteration)
-        c_exp.log_metric("L1 loss Train", loss_item)
+        c_exp.log_metric(f"{config['loss_fn']} loss Train", loss_item)
         c_exp.log_metric("PSNR Train", psnr_item)
 
         if (iteration > 0) and (iteration % iter_per_epoch == 0):
