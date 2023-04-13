@@ -91,14 +91,14 @@ def prepare_training(train_loader):
         if config.get("only_resume_weights"):  # Start "new" training
             optimizer = utils.make_optimizer(model.parameters(), config["optimizer"])
             epoch_start = 1
-            lr_scheduler = MultiStepLR(optimizer, **config["multi_step_lr"])
+            lr_scheduler = MultiStepLR(optimizer, **config.get("scheduler")["multi_step_lr"])
         else:  # Resume training
             optimizer = utils.make_optimizer(
                 model.parameters(), sv_file["optimizer"], load_sd=True
             )
             epoch_start = sv_file["epoch"] + 1
-            if config.get("scheduler") == "multi_step_lr":
-                lr_scheduler = MultiStepLR(optimizer, **config["multi_step_lr"])
+            if "multi_step_lr" in config.get("scheduler"):
+                lr_scheduler = MultiStepLR(optimizer, **config.get("scheduler")["multi_step_lr"])
             # for _ in range(epoch_start - 1): # TODO check if MSLR needs this
             #     lr_scheduler.step()
     else:
@@ -106,10 +106,12 @@ def prepare_training(train_loader):
         model = models.make(config["model"]).to("cuda", non_blocking=True)
         optimizer = utils.make_optimizer(model.parameters(), config["optimizer"])
         epoch_start = 1
-        if config.get("scheduler") == "multi_step_lr":
-            lr_scheduler = MultiStepLR(optimizer, **config["multi_step_lr"])
+        if "multi_step_lr" in config.get("scheduler"):
+            lr_scheduler = MultiStepLR(optimizer, **config.get("scheduler")["multi_step_lr"])
         else:
             lr_scheduler = None
+
+    log(f"sched: {yaml.dump(config.get('scheduler'))}")
     log("model: #params={}".format(utils.compute_num_params(model, text=True)))
     return model, optimizer, epoch_start, lr_scheduler
 
