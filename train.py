@@ -99,8 +99,7 @@ def prepare_training(train_loader):
             epoch_start = sv_file["epoch"] + 1
             if "multi_step_lr" in config.get("scheduler"):
                 lr_scheduler = MultiStepLR(optimizer, **config.get("scheduler")["multi_step_lr"])
-            # for _ in range(epoch_start - 1): # TODO check if MSLR needs this
-            #     lr_scheduler.step()
+
     else:
         # New model, new training
         model = models.make(config["model"]).to("cuda", non_blocking=True)
@@ -109,7 +108,7 @@ def prepare_training(train_loader):
         if "multi_step_lr" in config.get("scheduler"):
             lr_scheduler = MultiStepLR(optimizer, **config.get("scheduler")["multi_step_lr"])
         else:
-            lr_scheduler = None
+            raise NotImplementedError("Misconfigured Scheduler")
 
     log(f"sched: {yaml.dump(config.get('scheduler'))}")
     log("model: #params={}".format(utils.compute_num_params(model, text=True)))
@@ -197,10 +196,9 @@ def train_with_fake_epochs(
         # writer.add_scalars('loss', {'train': train_loss_itm}, epoch)
 
         writer.add_scalar("lr", optimizer.param_groups[0]["lr"], curr_epoch)
-        if lr_scheduler is not None:
-            c_exp.log_metric("LR", lr_scheduler.get_last_lr())
-            if config["scheduler"] == "multi_step_lr":
-                lr_scheduler.step()
+        if "multi_step_lr" in config.get("scheduler"):
+            c_exp.log_metric("LR", lr_scheduler.get_last_lr()[0], epoch=curr_epoch)
+            lr_scheduler.step()
 
         if ngpus > 1:
             model_ = model.module
