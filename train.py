@@ -268,14 +268,14 @@ def train_with_fake_epochs(
         total=config.get("epoch_max"), desc="Epoch", leave=True, unit="epoch"
     )
 
-    if config["loss_fn"] == "l1":
-        loss_fn = nn.L1Loss()
-    elif config["loss_fn"] == "fsim":
-        loss_fn = piq.FSIMLoss(data_range=config["rgb_range"])
-    else:
-        raise ValueError(f"Loss function {config[loss_fn]} not supported")
     train_loss = utils.Averager()
     metric_fn = utils.calc_psnr
+    if config["loss_fn"] == "l1":
+        loss_fn = nn.L1Loss()
+    # elif config["loss_fn"] == "fsim":
+        # loss_fn = piq.FSIMLoss(data_range=config["rgb_range"], chromatic=False)
+    else:
+        raise ValueError(f"Loss function {config[loss_fn]} not supported")
 
     for iteration, batch in enumerate(tqdm(train_loader, leave=True, desc="Train iteration", dynamic_ncols=True)):
         if iteration % iter_per_epoch == 0:
