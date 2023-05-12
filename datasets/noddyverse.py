@@ -147,13 +147,15 @@ class HRLRNoddyverse(NoddyDataset):
 
         hls = self.sp["hr_line_spacing"]  # normally set to 4
         lls = int(hls * self.scale)  # normally set in range(10)
-        hr_x, hr_y, hr_z = self._subsample(self.norm(self.data["gt_grid"]), hls)
-        lr_x, lr_y, lr_z = self._subsample(self.norm(self.data["gt_grid"]), lls)
+        hr_x, hr_y, hr_z = self._subsample(self.data["gt_grid"], hls)
+        lr_x, lr_y, lr_z = self._subsample(self.data["gt_grid"], lls)
+
+        # I would like to norm prior gridding, but it breaks value ranges :(
 
         # Note - we use scale here as a factor describing how big HR is x LR.
         # I think this diverges from what my brain normally does.
-        self.data["hr_grid"] = self._grid(hr_x, hr_y, hr_z, ls=hls, d=d)
-        self.data["lr_grid"] = self._grid(lr_x, lr_y, lr_z, ls=lls, d=d)
+        self.data["hr_grid"] = self.norm(self._grid(hr_x, hr_y, hr_z, ls=hls, d=d))
+        self.data["lr_grid"] = self.norm(self._grid(lr_x, lr_y, lr_z, ls=lls, d=d))
 
         lr_extent = self.data["lr_grid"].shape[-1]
         # lr_extent = int((d / self.scale) * 4)  # cs_fac = 4
