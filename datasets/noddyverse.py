@@ -1,9 +1,10 @@
+from pathlib import Path
 import numpy as np
 import torch
 import verde as vd
 from torch.utils.data import Dataset
 
-from mlnoddy.datasets import NoddyDataset
+from mlnoddy.datasets import NoddyDataset, Norm
 
 from datasets import register
 from utils import to_pixel_samples
@@ -330,3 +331,227 @@ def load_naprstek_synthetic(
         return norm(grid.rot90().permute(2, 0, 1))
     else:
         return grid.rot90().permute(2, 0, 1)
+
+
+class RealDataset(Dataset):
+    """Load a real survey tif and extract a patch to use as GT data.
+    GT data will be subsampled and gridded in noddyvesrse.HRLRReal() to
+    create HR and LR data.
+    """
+
+    def __init__(self, root_path, norm, nan_val=-99999, **kwargs):
+        super().__init__()
+        if norm is not None:
+            self.norm = Norm(
+                clip_min=norm[0], clip_max=norm[1], out_vals=(0, 1)
+            ).min_max_clip
+            self.unorm = Norm(
+                clip_min=norm[0], clip_max=norm[1], out_vals=(0, 1)
+            ).inverse_mmc
+        else:
+            self.norm = Norm(out_vals=(0, 1)).per_sample_norm
+            self.unorm = Norm(out_vals=(0, 1)).inverse_mmc
+
+        self.gt_patch_size = kwargs.get("gt_patch_size")
+        self.repeat = kwargs.get("repeat")
+        self.root_path = Path(root_path)
+        if self.root_path.suffix == ".tif":
+            self.root_path = self.root_path.with_suffix(".npy")
+            if not self.root_path.exists:
+                self._convert_tif()
+
+        self.full_gt = np.load(self.root_path, mmap_mode="c")
+        self.full_gt[self.full_gt == nan_val] = np.nan
+
+        self.len = (
+            np.logical_not(np.isnan(self.full_gt))
+        ).sum() // self.gt_patch_size**2
+
+        if min(self.full_gt.shape) < self.gt_patch_size:
+            raise ValueError(
+                f"Patch size {self.gt_patch_size} is larger than the smallest dimension of the data {min(self.full_gt.shape)}"
+            )
+
+    def __len__(self):
+        return self.len * self.repeat
+
+    def _convert_tif(self):
+        """For workers, needs data to be a memmapped numpy array"""
+        import tifffile
+
+        tiff = tifffile.imread(self.root_path)
+        np.save(self.root_path.with_suffix(".npy"), tiff)
+
+    def _patch_extract(self, index, offset):
+        """Extract a patch from the full gt grid.
+        The full grid is memmapped on disk. We:
+        - Pad the grid to make an integer number of tiles across the extent
+        - Unfold the grid into tiles, which may contain nan values
+        - Drop any nan values, either from padding or the original grid
+
+        We then access the patch by index. If there is an offset, we pad
+        the top and left of the patch with nan values. This makes the
+        patch a slightly different extent, which will in turn make a
+        slightly different grid output.
+
+        #TODO: Wish we were on Linux so we didn't have to memmap.
+        #TODO: repeat... does something. Not sure if it's the overlap I intend.
+
+        """
+
+        full_gt = torch.from_numpy(self.full_gt)
+
+        s = 200  # match noddy size # self.gt_patch_size + 20  # need 1 more sample for sample and gridding
+        off_pad = int((1 / offset) * s)
+
+        # Pad to make integer number of tiles across extent.
+        full_gt = torch.nn.functional.pad(
+            full_gt,
+            (
+                off_pad,
+                (s - (full_gt.shape[1] % s)),
+                off_pad,
+                (s - (full_gt.shape[0] % s)),
+            ),
+            mode="constant",
+            value=torch.nan,
+        )
+        tiles_per_row = full_gt.shape[1] // s
+        tiles_per_column = full_gt.shape[0] // s
+
+        patches = full_gt.unfold(0, s, s).unfold(1, s, s)
+        patches = patches.contiguous().view(tiles_per_row * tiles_per_column, -1, s, s)
+
+        # https://stackoverflow.com/a/64594975/10615407
+        shape = patches.shape
+        patches_reshaped = patches.reshape(shape[0], -1)
+        patches_reshaped = patches_reshaped[~torch.any(patches_reshaped.isnan(), dim=1)]
+        output = patches_reshaped.reshape(patches_reshaped.shape[0], *shape[1:])
+
+        idx = index % len(output)
+
+        return patches_reshaped.reshape(patches_reshaped.shape[0], *shape[1:])[idx]
+
+    def __getitem__(self, index):
+        """Index > 1 len creates an offset, to shift tile patches"""
+        offset = index // self.len + 1  # default 1 to avoid div by 0
+        self.data = {}
+        self.data["gt_grid"] = self._patch_extract(int(index), offset)
+
+        return self.data
+
+
+@register("real_training_dataset")
+class HRLRReal(RealDataset):
+    def __init__(
+        self,
+        root_path=None,
+        **kwargs,
+    ):
+        self.sp = {
+            "hr_line_spacing": kwargs.get("hr_line_spacing", 4),
+            "sample_spacing": kwargs.get("sample_spacing", 1),
+            "heading": kwargs.get("heading", "NS"),  # "EW" untested
+        }
+        kwargs["model_dir"] = root_path
+        self.scale = None  # init params
+        self.repeat = kwargs["repeat"]
+        super().__init__(root_path, **kwargs)
+
+    def _subsample(self, raster, ls):
+        """Select points from raster according to line spacing"""
+        ss = self.sp["sample_spacing"]  # Sample every n points along line
+
+        x, y = np.meshgrid(
+            np.arange(raster.shape[-1]),  # x, cols
+            np.arange(raster.shape[-2]),  # y, rows
+            indexing="xy",
+        )
+        x = x[::ss, ::ls]
+        y = y[::ss, ::ls]
+        vals = raster.numpy()[:, ::ss, ::ls].squeeze()  # shape for gridding
+        return x, y, vals
+
+    def _grid(self, x, y, z, ls, cs_fac=4, d=180):
+        """Min Curvature grid xyz at scale, with ls/cs_fac cell size.
+        Params:
+            d: adjustable crop factor, but 180 is best for noddyverse. 200 Max.
+        """
+        w, e, s, n = np.array([0, d, 0, d], dtype=np.float32)
+        cs = ls / cs_fac  # Cell size is e.g. 1/4 line spacing
+        gridder = vd.ScipyGridder("cubic")
+        gridder = gridder.fit(coordinates=(x, y), data=z)
+        grid = gridder.grid(
+            data_names="forward",
+            coordinates=np.meshgrid(
+                np.arange(w, e, step=cs),
+                np.arange(s, n, step=cs),
+                indexing="xy",
+            ),
+        )
+        grid = grid.get("forward").values.astype(np.float32)
+
+        return np.expand_dims(grid, 0)  # add channel dimension
+
+    def process(self, d=180):
+        # d is pixels in x, y to crop NAN from (if last row/col not sampled)
+        hls = self.sp["hr_line_spacing"]  # normally set to 4
+        lls = int(hls * self.scale)  # normally set in range(10)
+        hr_x, hr_y, hr_z = self._subsample(self.data["gt_grid"], hls)
+        lr_x, lr_y, lr_z = self._subsample(self.data["gt_grid"], lls)
+
+        self.data["hr_grid"] = self.norm(self._grid(hr_x, hr_y, hr_z, ls=hls, d=d))
+        self.data["lr_grid"] = self.norm(self._grid(lr_x, lr_y, lr_z, ls=lls, d=d))
+
+
+@register("real_training_wrapper")
+class RealWrapper(Dataset):
+    def __init__(
+        self,
+        dataset,
+        inp_size=None,
+        scale_min=2,
+        scale_max=None,
+        sample_q=None,
+    ):
+        self.dataset = dataset
+        self.dataset.inp_size = inp_size
+        self.scale = scale_min
+        self.scale_min = scale_min
+        self.scale_max = scale_max or scale_min  # if not scale_max...
+        self.sample_q = sample_q  # clip hr samples to same length
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, index):
+        self.dataset.scale = torch.randint(
+            low=self.scale_min,
+            high=self.scale_max + 1,
+            size=(1,),
+        )  # int(self.scale)
+        data = self.dataset[index]
+
+        self.dataset.process()  # d = cfg.gt_patch_size
+
+        data["hr_grid"] = torch.from_numpy(data["hr_grid"]).to(torch.float32)
+        data["lr_grid"] = torch.from_numpy(data["lr_grid"]).to(torch.float32)
+        # data contains the hr and lr grids at their correct sizes.
+
+        hr_coord, hr_val = to_pixel_samples(data["hr_grid"].contiguous())
+
+        if self.sample_q is not None:
+            sample_lst = np.random.choice(len(hr_coord), self.sample_q, replace=False)
+            hr_coord = hr_coord[sample_lst]
+            hr_val = hr_val[sample_lst]
+
+        hr_cell = torch.ones_like(hr_coord)
+        hr_cell[:, 0] *= 2 / data["hr_grid"].shape[-2]
+        hr_cell[:, 1] *= 2 / data["hr_grid"].shape[-1]
+
+        return {
+            "inp": data["lr_grid"],
+            "coord": hr_coord,
+            "cell": hr_cell,
+            "gt": hr_val,
+        }

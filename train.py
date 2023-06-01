@@ -350,6 +350,12 @@ def main(config_, save_path):
     tags = []
     tags.extend(["amp_scaler"] if config.get("use_amp_scaler") else [])
     tags.extend(["amp_autocast"] if config.get("use_amp_autocast") else [])
+    tags.extend(
+        ["real_data"]
+        if "real_training_dataset" in config["train_dataset"]["dataset"]["name"]
+        else []
+    )
+
     scale_tags = [
         f"{s}x"
         for s in range(

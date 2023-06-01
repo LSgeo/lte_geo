@@ -96,3 +96,24 @@ scheduler:
   # one_cycle_lr:
   #   max_lr: 2.e-3
 
+train_dataset:
+  dataset:
+    name: real_training_dataset
+    args:
+      root_path: "C:/Users/Public/scratch/WA_20m_Mag_Merge_v1_2020/State Map surveys/train_val_raster.tif"
+      gt_patch_size: 180
+      repeat: 5  # in this dataset, repeat defines overlap in patches: 4 = 50% ea dim i.e. 1 quadrant in [+]
+      hr_line_spacing: 4
+      sample_spacing: 1
+      heading: NS
+      norm: [-10000, 10000]
+  wrapper:
+    name: real_training_wrapper
+    args:
+      inp_size: 45
+      sample_q: 2025
+      scale_min: 4
+      scale_max: 4
+  batch_size: 16
+
+
