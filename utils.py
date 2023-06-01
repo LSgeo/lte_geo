@@ -75,9 +75,7 @@ def ensure_path(path, remove=True):
 def set_save_path(save_path, remove=True):
     # ensure_path(save_path, remove=remove)
     set_log_path(save_path)
-    writer = SummaryWriter(
-        os.path.join(save_path, 'tensorboard')
-    )
+    writer = SummaryWriter(os.path.join(save_path, "tensorboard"))
     return log, writer
 
 
@@ -127,6 +125,7 @@ def to_pixel_samples(img):
 
 
 def calc_psnr(sr, hr, dataset=None, scale=1, rgb_range=1, shave=None):
+    return 20 * torch.log10(rgb_range / torch.sqrt(torch.mean((sr - hr) ** 2)))
     diff = (sr - hr) / rgb_range
     if dataset is not None:
         if dataset == "benchmark":
