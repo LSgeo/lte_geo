@@ -463,15 +463,17 @@ class RealDataset(Dataset):
             self.unorm = Norm(out_vals=(0, 1)).inverse_mmc
 
         self.root_path = Path(root_path)
+        self.repeat = kwargs.get("repeat", 1)
         self.gt_patches = np.load(self.root_path, mmap_mode="r")
         self.gt_patch_size = kwargs.get("gt_patch_size")
 
     def __len__(self):
-        return len(self.gt_patches)
+        return len(self.gt_patches) * self.repeat
 
     def __getitem__(self, index):
+        idx = index % len(self.gt_patches)
         self.data = {}
-        self.data["gt_grid"] = self.gt_patches[index]
+        self.data["gt_grid"] = self.gt_patches[idx]
 
         return self.data
 
