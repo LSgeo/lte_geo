@@ -1,6 +1,5 @@
 from pathlib import Path
 import numpy as np
-import tifffile
 import torch
 import verde as vd
 from torch.utils.data import Dataset
@@ -334,8 +333,8 @@ def load_naprstek_synthetic(
         return grid.rot90().permute(2, 0, 1)
 
 
-class LargeTrainingTiff:
-    """Process large data extents to stacked patches for training.
+class LargeRasterData:
+    """Process large data extents to stacked patches for training/etc.
     e.g. The 30 GB state map, masked to <80 m, needs to be handled.
     We are going to patch extract it at 1 or 2 offsets, and save the
     finished patch stack to disk, for memmap loading.
@@ -350,16 +349,24 @@ class LargeTrainingTiff:
         self.file_path = Path(file_path)
         self.nan_val = nan_val
 
-        if self.file_path.suffix == ".tif":
-            self._cache_tiff()
-
-    def _cache_tiff(self):
         self.cache_path = Path("C:/Users/Public/scratch/temp") / ".cached_grid.npy"
-        if not self.cache_path.exists():
-            print(f"Caching to {self.cache_path.absolute()}")
-            np.save(self.cache_path, tifffile.imread(self.file_path))
-        else:
+        if self.cache_path.exists():
             print(f"Loading cached grid from {self.cache_path.absolute()}")
+        else:
+            print(f"Caching to {self.cache_path.absolute()}")
+            if self.file_path.suffix == ".tif":
+                import tifffile
+
+                np.save(self.cache_path, tifffile.imread(self.file_path))
+
+            elif self.file_path.suffix == ".ers":
+                import rasterio
+
+                with rasterio.open(self.file_path) as src:
+                    if not self.nan_val == src.nodata:
+                        raise ValueError(f"Specified NaN value {self.nan_val} does not match ers metadata {src.nodata}")
+                    np.save(self.cache_path, src.read(1))
+
         self.grid = np.load(self.cache_path, mmap_mode="c")
         self.grid = torch.from_numpy(self.grid)
         self.grid[self.grid == self.nan_val] = torch.nan
@@ -422,7 +429,8 @@ class LargeTrainingTiff:
 
     def _eg():
         """What I ran to generate the data I used"""
-        trainingdata = LargeTrainingTiff(
+        # from datasets.noddyverse import LargeRasterData
+        trainingdata = LargeRasterData(
             file_path=Path(
                 "C:/Users/Public/scratch/WA_20m_Mag_Merge_v1_2020/State Map surveys/processing/WA_MAG_20m_MGA2020_sub80m_train.tif"
             )
@@ -440,7 +448,7 @@ class LargeTrainingTiff:
             stacked.append(np.load(arr))
 
         stacked = np.concatenate(stacked, axis=0)
-        np.save("C:/Users/Public/scratch/sub80m_patch_stack_train.npy", stacked)        
+        np.save("C:/Users/Public/scratch/sub80m_patch_stack_train.npy", stacked)
 
 
 class RealDataset(Dataset):
@@ -478,7 +486,7 @@ class RealDataset(Dataset):
         return self.data
 
 
-@register("real_training_dataset")
+@register("real_dataset")
 class HRLRReal(RealDataset):
     def __init__(
         self,
@@ -540,7 +548,7 @@ class HRLRReal(RealDataset):
         self.data["lr_grid"] = self.norm(self._grid(lr_x, lr_y, lr_z, ls=lls, d=d))
 
 
-@register("real_training_wrapper")
+@register("real_wrapper")
 class RealWrapper(Dataset):
     def __init__(
         self,
