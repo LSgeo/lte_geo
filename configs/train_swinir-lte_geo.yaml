@@ -39,32 +39,72 @@ only_resume_weights: False
 #       # scale_max: 5  # max 4 with no other changes. up to 10, hardcoded to exclude 7
 #       # cs_fac: 4  # Hardcoded to 4. If you set to 5, need to hardcode exclude scale 8.
 #   batch_size: 8 #1 #4
+# 
+# val_dataset:
+#   dataset:
+#     name: noddyverse_dataset
+#     args:
+#       repeat: 1
+#       use_dset_slice: [-8001, -1]  # [n:m] slice notation, can be negative
+#       root_path: "C:/Users/Public/scratch/Noddy_1M"
+#       noddylist: "C:/Users/Public/scratch/Noddy_1M/models.csv"
+#       blocklist: "C:/Users/Public/scratch/Noddy_10k/models_10k.csv" 
+#       hr_line_spacing: 4
+#       sample_spacing: 1
+#       heading: NS
+#       norm: [-10000, 10000]
+#       load_magnetics: True
+#       load_gravity: False
+#       events:
+#   wrapper:
+#     name: noddyverse_wrapper
+#     args:
+#       crop: True 
+#       inp_size: 30
+#       sample_q: 900
+#       scale_min: 6
+#       scale_max: 6
+#   batch_size: 8
 
-
-val_dataset:
+train_dataset:
   dataset:
-    name: noddyverse_dataset
+    name: real_dataset
     args:
-      repeat: 1
-      use_dset_slice: [-8001, -1]  # [n:m] slice notation, can be negative
-      root_path: "C:/Users/Public/scratch/Noddy_1M"
-      noddylist: "C:/Users/Public/scratch/Noddy_1M/models.csv"
-      blocklist: "C:/Users/Public/scratch/Noddy_10k/models_10k.csv" 
+      root_path: "C:/Users/Public/scratch/sub80m_patch_stack_train.npy"
+      repeat: 2
+      gt_patch_size: 180
       hr_line_spacing: 4
       sample_spacing: 1
       heading: NS
       norm: [-10000, 10000]
-      load_magnetics: True
-      load_gravity: False
-      events:
   wrapper:
-    name: noddyverse_wrapper
+    name: real_wrapper
     args:
-      crop: True 
-      inp_size: 30
-      sample_q: 900
-      scale_min: 6
-      scale_max: 6
+      inp_size: 45
+      sample_q: 2025
+      scale_min: 4
+      scale_max: 4
+  batch_size: 8
+
+val_dataset:
+  dataset:
+    name: real_dataset
+    args:
+      root_path: "C:/Users/Public/scratch/sub80m_patch_stack_test.npy" 
+      # root_path: "C:/Users/Public/scratch/sub80m_patch_stack_val_NSW.npy"
+      repeat: 1
+      gt_patch_size: 180
+      hr_line_spacing: 4
+      sample_spacing: 1
+      heading: NS
+      norm: [-10000, 10000]
+  wrapper:
+    name: real_wrapper
+    args:
+      inp_size: 45
+      sample_q: 2025
+      scale_min: 4
+      scale_max: 4
   batch_size: 8
 
 loss_fn: l1
@@ -88,7 +128,7 @@ model:
 optimizer:
   name: adam
   args:
-    lr: 4.e-3
+    lr: 1.e-4
 
 epoch_max: 10
 epoch_val: 1
@@ -99,25 +139,3 @@ scheduler:
     gamma: 0.5
   # one_cycle_lr:
   #   max_lr: 2.e-3
-
-train_dataset:
-  dataset:
-    name: real_training_dataset
-    args:
-      root_path: "C:/Users/Public/scratch/WA_20m_Mag_Merge_v1_2020/State Map surveys/train_val_raster.tif"
-      gt_patch_size: 180
-      repeat: 5  # in this dataset, repeat defines overlap in patches: 4 = 50% ea dim i.e. 1 quadrant in [+]
-      hr_line_spacing: 4
-      sample_spacing: 1
-      heading: NS
-      norm: [-10000, 10000]
-  wrapper:
-    name: real_training_wrapper
-    args:
-      inp_size: 45
-      sample_q: 2025
-      scale_min: 4
-      scale_max: 4
-  batch_size: 16
-
-
