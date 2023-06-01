@@ -91,14 +91,18 @@ def prepare_training(train_loader):
         if config.get("only_resume_weights"):  # Start "new" training
             optimizer = utils.make_optimizer(model.parameters(), config["optimizer"])
             epoch_start = 1
-            lr_scheduler = MultiStepLR(optimizer, **config.get("scheduler")["multi_step_lr"])
+            lr_scheduler = MultiStepLR(
+                optimizer, **config.get("scheduler")["multi_step_lr"]
+            )
         else:  # Resume training
             optimizer = utils.make_optimizer(
                 model.parameters(), sv_file["optimizer"], load_sd=True
             )
             epoch_start = sv_file["epoch"] + 1
             if "multi_step_lr" in config.get("scheduler"):
-                lr_scheduler = MultiStepLR(optimizer, **config.get("scheduler")["multi_step_lr"])
+                lr_scheduler = MultiStepLR(
+                    optimizer, **config.get("scheduler")["multi_step_lr"]
+                )
 
     else:
         # New model, new training
@@ -106,7 +110,9 @@ def prepare_training(train_loader):
         optimizer = utils.make_optimizer(model.parameters(), config["optimizer"])
         epoch_start = 1
         if "multi_step_lr" in config.get("scheduler"):
-            lr_scheduler = MultiStepLR(optimizer, **config.get("scheduler")["multi_step_lr"])
+            lr_scheduler = MultiStepLR(
+                optimizer, **config.get("scheduler")["multi_step_lr"]
+            )
         else:
             raise NotImplementedError("Misconfigured Scheduler")
 
@@ -192,7 +198,6 @@ def train_with_fake_epochs(
     def fake_epoch_end(curr_epoch, train_loss_itm, max_val_v):
         """"""
         log_info.append(f"train: loss={train_loss_itm:.4f}")
-        c_exp.log_metric("L1 loss Train", train_loss_itm)
         # writer.add_scalars('loss', {'train': train_loss_itm}, epoch)
 
         writer.add_scalar("lr", optimizer.param_groups[0]["lr"], curr_epoch)
@@ -232,7 +237,7 @@ def train_with_fake_epochs(
             else:
                 model_ = model
 
-            val_l1, val_res = eval_psnr(
+            val_l1, val_res, fsim_res = eval_psnr(
                 val_loader,
                 model_,
                 eval_type=config.get("eval_type"),
@@ -246,6 +251,7 @@ def train_with_fake_epochs(
             log_info.append(f"val: psnr={val_res:.4f}")
             c_exp.log_metric("L1 loss Val", val_l1)
             c_exp.log_metric("PSNR Val", val_res)
+            c_exp.log_metric("FSIM Val", fsim_res)
             # writer.add_scalars('psnr', {'val': val_res}, curr_epoch)
             if val_res > max_val_v:
                 max_val_v = val_res
@@ -270,14 +276,25 @@ def train_with_fake_epochs(
 
     train_loss = utils.Averager()
     metric_fn = utils.calc_psnr
-    if config["loss_fn"] == "l1":
-        loss_fn = nn.L1Loss()
-    # elif config["loss_fn"] == "fsim":
-        # loss_fn = piq.FSIMLoss(data_range=config["rgb_range"], chromatic=False)
+    l1_loss_fn = nn.L1Loss()
+    if "fsim" in config["loss_fn"]:
+        iqa_loss_fn = piq.FSIMLoss(data_range=config["rgb_range"], chromatic=False)
+    elif "ssim" in config["loss_fn"]:
+        iqa_loss_fn = piq.SSIMLoss(data_range=config["rgb_range"])
+    elif "haarpsi" in config["loss_fn"]:
+        iqa_loss_fn = piq.HaarPSILoss(
+            data_range=config["rgb_range"],
+            c=20,  # selected for higher "noise" task performance
+            alpha=6,  # selected for higher "noise" task performance
+        )
+    elif "l1" in config["loss_fn"]:
+        pass
     else:
-        raise ValueError(f"Loss function {config[loss_fn]} not supported")
+        raise NotImplementedError(f'{config["loss_fn"]} unsupported')
 
-    for iteration, batch in enumerate(tqdm(train_loader, leave=True, desc="Train iteration", dynamic_ncols=True)):
+    for iteration, batch in enumerate(
+        tqdm(train_loader, leave=True, desc="Train iteration", dynamic_ncols=True)
+    ):
         if iteration % iter_per_epoch == 0:
             epoch, t_epoch_start, log_info = fake_epoch_start(epoch)
         c_exp.set_step(iteration)
@@ -289,7 +306,13 @@ def train_with_fake_epochs(
 
         with autocast(enabled=config.get("use_amp_autocast", False)):
             pred = model(batch["inp"], batch["coord"], batch["cell"])
-            loss = loss_fn(pred, batch["gt"])
+            l1_loss = l1_loss_fn(pred, batch["gt"])
+
+            if torch.isnan(pred).any():
+                log(f"\npred had nans, skipped iter {iteration} ")
+                continue
+            # if pred.min() < -0 or pred.max() > 1 or torch.isnan(pred).any():
+            #     log(f"Value of {pred.min()=} {pred.max()=} out of range")
             psnr = metric_fn(
                 pred,
                 batch["gt"],
@@ -297,19 +320,48 @@ def train_with_fake_epochs(
                 shave=config.get("shave"),
             )
 
+            if "l1" in config["loss_fn"]:
+                loss = l1_loss
+            elif (
+                "fsim" in config["loss_fn"]
+                or "haarpsi" in config["loss_fn"]
+                or "ssim" in config["loss_fn"]
+            ):
+                pred, batch = reshape(batch, 0, 0, batch["coord"], pred)
+                # if pred.min() < -0 or pred.max() > 1:
+                #     log(f"Value of {pred.min()=} {pred.max()=} out of range")
+                pred.clamp_(0.0, 1.0)
+                batch["gt"].clamp_(0.0, 1.0)
+                iqa_loss = iqa_loss_fn(pred, batch["gt"])
+                loss = iqa_loss
+                iqa_loss_item = iqa_loss.item()
+            else:
+                raise ValueError(f"Loss function not supported, {epoch=}")
+
         scaler.scale(loss).backward()
         scaler.step(optimizer)  # .step()
         scaler.update()
         optimizer.zero_grad(set_to_none=True)
 
-        loss_item = loss.item()
+        l1_loss_item = l1_loss.item()
         psnr_item = psnr.item()
-        train_loss.add(loss_item)
+        train_loss.add(loss.item())
 
-        writer.add_scalars("loss", {"train": loss_item}, iteration)
-        writer.add_scalars("psnr", {"train": psnr_item}, iteration)
-        c_exp.log_metric(f"{config['loss_fn']} loss Train", loss_item)
-        c_exp.log_metric("PSNR Train", psnr_item)
+        writer.add_scalars("L1 loss Train", {"train": l1_loss_item}, iteration)
+        writer.add_scalars("PSNR", {"train": psnr_item}, iteration)
+        c_exp.log_metric("L1 loss Train", l1_loss_item, step=iteration)
+        c_exp.log_metric("PSNR Train", psnr_item, step=iteration)
+        if (
+            "fsim" in config["loss_fn"]
+            or "haarpsi" in config["loss_fn"]
+            or "ssim" in config["loss_fn"]
+        ):
+            writer.add_scalars(
+                f"{config['loss_fn']} loss Train", {"train": iqa_loss_item}, iteration
+            )
+            c_exp.log_metric(
+                f"{config['loss_fn']} loss Train", iqa_loss_item, step=iteration
+            )
 
         if (iteration > 0) and (iteration % iter_per_epoch == 0):
             max_val_v = fake_epoch_end(epoch, train_loss.item(), max_val_v)
@@ -364,6 +416,7 @@ def main(config_, save_path):
         )
     ]
     tags.extend(scale_tags)
+    tags.extend([config["loss_fn"].upper()])
     if config["train_dataset"]["dataset"]["args"].get("events") is not None:
         event_tags = [
             f"{e}" for e in config["train_dataset"]["dataset"]["args"]["events"]
