@@ -1,5 +1,6 @@
 from pathlib import Path
 import numpy as np
+import tifffile
 import torch
 import verde as vd
 from torch.utils.data import Dataset
@@ -333,13 +334,122 @@ def load_naprstek_synthetic(
         return grid.rot90().permute(2, 0, 1)
 
 
+class LargeTrainingTiff:
+    """Process large data extents to stacked patches for training.
+    e.g. The 30 GB state map, masked to <80 m, needs to be handled.
+    We are going to patch extract it at 1 or 2 offsets, and save the
+    finished patch stack to disk, for memmap loading.
+
+    - Load the full grid
+    - Run patch_extract on it for a few offsets
+    - Save the resulting tensors to numpy array npy.
+
+    """
+
+    def __init__(self, file_path, nan_val=-99_999):
+        self.file_path = Path(file_path)
+        self.nan_val = nan_val
+
+        if self.file_path.suffix == ".tif":
+            self._cache_tiff()
+
+    def _cache_tiff(self):
+        self.cache_path = Path("C:/Users/Public/scratch/temp") / ".cached_grid.npy"
+        if not self.cache_path.exists():
+            print(f"Caching to {self.cache_path.absolute()}")
+            np.save(self.cache_path, tifffile.imread(self.file_path))
+        else:
+            print(f"Loading cached grid from {self.cache_path.absolute()}")
+        self.grid = np.load(self.cache_path, mmap_mode="c")
+        self.grid = torch.from_numpy(self.grid)
+        self.grid[self.grid == self.nan_val] = torch.nan
+
+    def patch_extract(self, patch_size: int, offset: int = 0):
+        """Extract a patch from the full gt grid.
+        - Pad the grid to make an integer number of tiles across the extent
+        - Unfold the grid into tiles, which may contain nan values
+        - Drop any nan values, either from the original grid or padding
+
+        offset: shift patch by a percentage of patch_size
+        e.g. offset = 50 means top and left (iirc) are padded by .5 * patch_size,
+            making tiles shift by half
+        """
+
+        s = patch_size
+        off_pad = int((offset / 100) * s)
+        self.off_pad = off_pad
+
+        # Pad to make integer number of tiles across extent.
+        pad_grid = torch.nn.functional.pad(
+            self.grid,
+            (
+                off_pad,
+                (s - (self.grid.shape[1] % s)),
+                off_pad,
+                (s - (self.grid.shape[0] % s)),
+            ),
+            mode="constant",
+            value=torch.nan,
+        )
+        tiles_per_row = pad_grid.shape[1] // s
+        tiles_per_column = pad_grid.shape[0] // s
+
+        patches = pad_grid.unfold(0, s, s).unfold(1, s, s)
+        patches = patches.contiguous().view(tiles_per_row * tiles_per_column, -1, s, s)
+
+        # https://stackoverflow.com/a/64594975/10615407
+        shape = patches.shape
+        patches_reshaped = patches.reshape(shape[0], -1)
+        patches_reshaped = patches_reshaped[~torch.any(patches_reshaped.isnan(), dim=1)]
+
+        self.patches = patches_reshaped.reshape(
+            patches_reshaped.shape[0], *shape[1:]
+        ).numpy()
+
+    def save_npy(self, out_path=None):
+        if out_path is None:
+            out_path = self.file_path.with_name(
+                f"{self.file_path.stem}_offset_{self.off_pad}.npy"
+            )
+        else:
+            out_path = Path(out_path)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+        np.save(out_path, self.patches)
+        print(f"Saved patches with shape {self.patches.shape} to {out_path.absolute()}")
+
+    def cleanup(self):
+        self.cache_path.unlink()
+
+    def _eg():
+        """What I ran to generate the data I used"""
+        trainingdata = LargeTrainingTiff(
+            file_path=Path(
+                "C:/Users/Public/scratch/WA_20m_Mag_Merge_v1_2020/State Map surveys/processing/WA_MAG_20m_MGA2020_sub80m_train.tif"
+            )
+        )
+        for offset in [0, 23, 53, 79]:
+            trainingdata.patch_extract(patch_size=200, offset=offset)
+            trainingdata.save_npy()
+        trainingdata.cleanup()
+
+        # Finally, merge all the created .npy files into one big one:
+        stacked = []
+        for arr in Path(
+            "C:/Users/Public/scratch/WA_20m_Mag_Merge_v1_2020/State Map surveys/processing"
+        ).glob("*offset_*.npy"):
+            stacked.append(np.load(arr))
+
+        stacked = np.concatenate(stacked, axis=0)
+        np.save("C:/Users/Public/scratch/sub80m_patch_stack_train.npy", stacked)        
+
+
 class RealDataset(Dataset):
     """Load a real survey tif and extract a patch to use as GT data.
     GT data will be subsampled and gridded in noddyvesrse.HRLRReal() to
     create HR and LR data.
     """
 
-    def __init__(self, root_path, norm, nan_val=-99999, **kwargs):
+    def __init__(self, root_path, norm, **kwargs):
         super().__init__()
         if norm is not None:
             self.norm = Norm(
@@ -352,91 +462,16 @@ class RealDataset(Dataset):
             self.norm = Norm(out_vals=(0, 1)).per_sample_norm
             self.unorm = Norm(out_vals=(0, 1)).inverse_mmc
 
-        self.gt_patch_size = kwargs.get("gt_patch_size")
-        self.repeat = kwargs.get("repeat")
         self.root_path = Path(root_path)
-        if self.root_path.suffix == ".tif":
-            self.root_path = self.root_path.with_suffix(".npy")
-            if not self.root_path.exists:
-                self._convert_tif()
-
-        self.full_gt = np.load(self.root_path, mmap_mode="c")
-        self.full_gt[self.full_gt == nan_val] = np.nan
-
-        self.len = (
-            np.logical_not(np.isnan(self.full_gt))
-        ).sum() // self.gt_patch_size**2
-
-        if min(self.full_gt.shape) < self.gt_patch_size:
-            raise ValueError(
-                f"Patch size {self.gt_patch_size} is larger than the smallest dimension of the data {min(self.full_gt.shape)}"
-            )
+        self.gt_patches = np.load(self.root_path, mmap_mode="r")
+        self.gt_patch_size = kwargs.get("gt_patch_size")
 
     def __len__(self):
-        return self.len * self.repeat
-
-    def _convert_tif(self):
-        """For workers, needs data to be a memmapped numpy array"""
-        import tifffile
-
-        tiff = tifffile.imread(self.root_path)
-        np.save(self.root_path.with_suffix(".npy"), tiff)
-
-    def _patch_extract(self, index, offset):
-        """Extract a patch from the full gt grid.
-        The full grid is memmapped on disk. We:
-        - Pad the grid to make an integer number of tiles across the extent
-        - Unfold the grid into tiles, which may contain nan values
-        - Drop any nan values, either from padding or the original grid
-
-        We then access the patch by index. If there is an offset, we pad
-        the top and left of the patch with nan values. This makes the
-        patch a slightly different extent, which will in turn make a
-        slightly different grid output.
-
-        #TODO: Wish we were on Linux so we didn't have to memmap.
-        #TODO: repeat... does something. Not sure if it's the overlap I intend.
-
-        """
-
-        full_gt = torch.from_numpy(self.full_gt)
-
-        s = 200  # match noddy size # self.gt_patch_size + 20  # need 1 more sample for sample and gridding
-        off_pad = int((1 / offset) * s)
-
-        # Pad to make integer number of tiles across extent.
-        full_gt = torch.nn.functional.pad(
-            full_gt,
-            (
-                off_pad,
-                (s - (full_gt.shape[1] % s)),
-                off_pad,
-                (s - (full_gt.shape[0] % s)),
-            ),
-            mode="constant",
-            value=torch.nan,
-        )
-        tiles_per_row = full_gt.shape[1] // s
-        tiles_per_column = full_gt.shape[0] // s
-
-        patches = full_gt.unfold(0, s, s).unfold(1, s, s)
-        patches = patches.contiguous().view(tiles_per_row * tiles_per_column, -1, s, s)
-
-        # https://stackoverflow.com/a/64594975/10615407
-        shape = patches.shape
-        patches_reshaped = patches.reshape(shape[0], -1)
-        patches_reshaped = patches_reshaped[~torch.any(patches_reshaped.isnan(), dim=1)]
-        output = patches_reshaped.reshape(patches_reshaped.shape[0], *shape[1:])
-
-        idx = index % len(output)
-
-        return patches_reshaped.reshape(patches_reshaped.shape[0], *shape[1:])[idx]
+        return len(self.gt_patches)
 
     def __getitem__(self, index):
-        """Index > 1 len creates an offset, to shift tile patches"""
-        offset = index // self.len + 1  # default 1 to avoid div by 0
         self.data = {}
-        self.data["gt_grid"] = self._patch_extract(int(index), offset)
+        self.data["gt_grid"] = self.gt_patches[index]
 
         return self.data
 
@@ -455,7 +490,6 @@ class HRLRReal(RealDataset):
         }
         kwargs["model_dir"] = root_path
         self.scale = None  # init params
-        self.repeat = kwargs["repeat"]
         super().__init__(root_path, **kwargs)
 
     def _subsample(self, raster, ls):
@@ -469,7 +503,7 @@ class HRLRReal(RealDataset):
         )
         x = x[::ss, ::ls]
         y = y[::ss, ::ls]
-        vals = raster.numpy()[:, ::ss, ::ls].squeeze()  # shape for gridding
+        vals = raster[:, ::ss, ::ls].squeeze()  # shape for gridding
         return x, y, vals
 
     def _grid(self, x, y, z, ls, cs_fac=4, d=180):
@@ -530,10 +564,11 @@ class RealWrapper(Dataset):
             high=self.scale_max + 1,
             size=(1,),
         )  # int(self.scale)
-        data = self.dataset[index]
 
+        data = self.dataset[index]
         self.dataset.process()  # d = cfg.gt_patch_size
 
+        data["gt_grid"] = torch.from_numpy(data["gt_grid"]).to(torch.float32)
         data["hr_grid"] = torch.from_numpy(data["hr_grid"]).to(torch.float32)
         data["lr_grid"] = torch.from_numpy(data["lr_grid"]).to(torch.float32)
         # data contains the hr and lr grids at their correct sizes.
