@@ -71,7 +71,7 @@ def make_data_loaders():
     return train_loader, val_loader, preview_loader
 
 
-def prepare_training(train_loader):
+def prepare_training(train_loader, preview_loader):
     if config.get("resume") is not None:
         # Find and load saved model
         best_or_last = "last"
@@ -103,6 +103,8 @@ def prepare_training(train_loader):
                 lr_scheduler = MultiStepLR(
                     optimizer, **config.get("scheduler")["multi_step_lr"]
                 )
+
+        log_images(preview_loader, model, c_exp)
 
     else:
         # New model, new training
@@ -392,7 +394,9 @@ def main(config_, save_path):
         yaml.dump(config, f, sort_keys=False)
 
     train_loader, val_loader, preview_loader = make_data_loaders()
-    model, optimizer, epoch_start, lr_scheduler = prepare_training(train_loader)
+    model, optimizer, epoch_start, lr_scheduler = prepare_training(
+        train_loader, preview_loader
+    )
     scaler = GradScaler(enabled=config.get("use_amp_scaler", False))
 
     n_gpus = len(os.environ["CUDA_VISIBLE_DEVICES"].split(","))
@@ -402,9 +406,10 @@ def main(config_, save_path):
     tags = []
     tags.extend(["amp_scaler"] if config.get("use_amp_scaler") else [])
     tags.extend(["amp_autocast"] if config.get("use_amp_autocast") else [])
+    tags.extend(["resume", config.get("resume")] if config.get("resume") else [])
     tags.extend(
         ["real_data"]
-        if "real_training_dataset" in config["train_dataset"]["dataset"]["name"]
+        if "real_dataset" in config["train_dataset"]["dataset"]["name"]
         else []
     )
 
