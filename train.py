@@ -413,7 +413,11 @@ def main(config_, save_path):
         if "real_dataset" in config["train_dataset"]["dataset"]["name"]
         else []
     )
-
+    tags.extend(
+        ["aug"]
+        if any(config["train_dataset"]["wrapper"]["args"]["augmentations"])
+        else []
+    )
     scale_tags = [
         f"{s}x"
         for s in range(
@@ -429,6 +433,7 @@ def main(config_, save_path):
         ]
         tags.extend(event_tags)
     c_exp.add_tags(tags)
+
     c_exp.log_parameters(flatten_dict(config))
     c_exp.log_code("datasets/noddyverse.py")
 

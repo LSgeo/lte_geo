@@ -364,7 +364,9 @@ class LargeRasterData:
 
                 with rasterio.open(self.file_path) as src:
                     if not self.nan_val == src.nodata:
-                        raise ValueError(f"Specified NaN value {self.nan_val} does not match ers metadata {src.nodata}")
+                        raise ValueError(
+                            f"Specified NaN value {self.nan_val} does not match ers metadata {src.nodata}"
+                        )
                     np.save(self.cache_path, src.read(1))
 
         self.grid = np.load(self.cache_path, mmap_mode="c")
@@ -496,7 +498,7 @@ class HRLRReal(RealDataset):
         self.sp = {
             "hr_line_spacing": kwargs.get("hr_line_spacing", 4),
             "sample_spacing": kwargs.get("sample_spacing", 1),
-            "heading": kwargs.get("heading", "NS"),  # "EW" untested
+            "heading": kwargs.get("heading", "NS"),  # "EW" deprecated
         }
         kwargs["model_dir"] = root_path
         self.scale = None  # init params
@@ -554,6 +556,7 @@ class RealWrapper(Dataset):
         self,
         dataset,
         inp_size=None,
+        augmentations: dict = {},
         scale_min=2,
         scale_max=None,
         sample_q=None,
@@ -563,10 +566,37 @@ class RealWrapper(Dataset):
         self.scale = scale_min
         self.scale_min = scale_min
         self.scale_max = scale_max or scale_min  # if not scale_max...
+        self.aug = augmentations
         self.sample_q = sample_q  # clip hr samples to same length
+        self.aug_count = 1 + sum(augmentations.values())  # original data included
+
+    def _preprocess_augment(self, data):
+        """Rotate GT, pre-subsampling / gridding."""
+        self.aug_count += 1
+        if torch.rand(1) < 0.5:
+            data["gt_grid"] = np.rot90(data["gt_grid"], axes=(1, 2))
+
+    def _augment(self, data):
+        """Augment data with flips and rotations"""
+        if self.aug.get("flip"):
+            self.aug_count += 2
+            if torch.rand(1) < 0.5:
+                data["gt_grid"] = np.fliplr(data["gt_grid"])
+                data["hr_grid"] = np.fliplr(data["hr_grid"])
+                data["lr_grid"] = np.fliplr(data["lr_grid"])
+            if torch.rand(1) < 0.5:
+                data["gt_grid"] = np.flipud(data["gt_grid"])
+                data["hr_grid"] = np.flipud(data["hr_grid"])
+                data["lr_grid"] = np.flipud(data["lr_grid"])
+        if self.aug.get("rotate"):
+            self.aug_count += 1
+            if torch.rand(1) < 0.5:
+                data["gt_grid"] = np.rot90(data["gt_grid"], axes=(1, 2))
+                data["hr_grid"] = np.rot90(data["hr_grid"], axes=(1, 2))
+                data["lr_grid"] = np.rot90(data["lr_grid"], axes=(1, 2))
 
     def __len__(self):
-        return len(self.dataset)
+        return len(self.dataset) * self.aug_count
 
     def __getitem__(self, index):
         self.dataset.scale = torch.randint(
@@ -576,12 +606,16 @@ class RealWrapper(Dataset):
         )  # int(self.scale)
 
         data = self.dataset[index]
-        self.dataset.process()  # d = cfg.gt_patch_size
 
-        data["gt_grid"] = torch.from_numpy(data["gt_grid"]).to(torch.float32)
-        data["hr_grid"] = torch.from_numpy(data["hr_grid"]).to(torch.float32)
-        data["lr_grid"] = torch.from_numpy(data["lr_grid"]).to(torch.float32)
-        # data contains the hr and lr grids at their correct sizes.
+        if self.aug.get("sample"):
+            self._preprocess_augment(data)
+        self.dataset.process()  # d = cfg.gt_patch_size
+        if self.aug is not None:
+            self._augment(data)
+
+        data["gt_grid"] = torch.from_numpy(data["gt_grid"].copy()).to(torch.float32)
+        data["hr_grid"] = torch.from_numpy(data["hr_grid"].copy()).to(torch.float32)
+        data["lr_grid"] = torch.from_numpy(data["lr_grid"].copy()).to(torch.float32)
 
         hr_coord, hr_val = to_pixel_samples(data["hr_grid"].contiguous())
 

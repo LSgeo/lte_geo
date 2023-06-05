@@ -72,7 +72,7 @@ train_dataset:
     name: real_dataset
     args:
       root_path: "C:/Users/Public/scratch/sub80m_patch_stack_train.npy"
-      repeat: 10 # *= number of augs in wrapper 
+      repeat: 5 # *= number of augs in wrapper 
       gt_patch_size: 180
       hr_line_spacing: 4
       sample_spacing: 1
@@ -85,7 +85,7 @@ train_dataset:
       augmentations:
         flip: True
         rotate: True
-        sample: False
+        sample: True
       sample_q: 2025
       scale_min: 4
       scale_max: 4
@@ -140,7 +140,7 @@ epoch_val: 1
 epoch_save:
 scheduler:
   multi_step_lr:
-    milestones: [5,7,9]
+    milestones: [5,6,7,8,9]
     gamma: 0.5
   # one_cycle_lr:
   #   max_lr: 2.e-3
