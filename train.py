@@ -237,7 +237,7 @@ def train_with_fake_epochs(
             else:
                 model_ = model
 
-            val_l1, val_res, fsim_res = eval_psnr(
+            val_l1, val_res, ssim_res = eval_psnr(
                 val_loader,
                 model_,
                 eval_type=config.get("eval_type"),
@@ -251,7 +251,7 @@ def train_with_fake_epochs(
             log_info.append(f"val: psnr={val_res:.4f}")
             c_exp.log_metric("L1 loss Val", val_l1)
             c_exp.log_metric("PSNR Val", val_res)
-            c_exp.log_metric("FSIM Val", fsim_res)
+            c_exp.log_metric("SSIM Val", ssim_res)
             # writer.add_scalars('psnr', {'val': val_res}, curr_epoch)
             if val_res > max_val_v:
                 max_val_v = val_res

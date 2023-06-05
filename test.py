@@ -76,7 +76,7 @@ def eval_psnr(
     l1_fn = torch.nn.L1Loss()
     l1_res = utils.Averager()
     val_res = utils.Averager()
-    fsim_res = utils.Averager()
+    ssim_res = utils.Averager()
 
     pbar = tqdm(loader, leave=False, desc="Eval", dynamic_ncols=True)
     for i, batch in enumerate(pbar):
@@ -127,8 +127,8 @@ def eval_psnr(
         # pred.clamp_(0, 1)
         if eval_type is not None and not fast:  # reshape for shaving-eval
             pred, batch = reshape(batch, h_pad, w_pad, coord, pred)
-            fsim = piq.fsim(pred.clamp(0, 1), batch["gt"], chromatic=False)
-            fsim_res.add(fsim.item(), inp.shape[0])
+            ssim = piq.ssim(pred.clamp(0, 1), batch["gt"])
+            ssim_res.add(ssim.item(), inp.shape[0])
 
             # if __name__ == "__main__":
             #     save_pred(
@@ -150,7 +150,7 @@ def eval_psnr(
         if verbose:
             pbar.set_description("PSNR eval {:.4f}".format(val_res.item()))
 
-    return l1_res.item(), val_res.item(), fsim_res.item()
+    return l1_res.item(), val_res.item(), ssim_res.item()
 
 
 def reshape(batch, h_pad, w_pad, coord, pred):
