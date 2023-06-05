@@ -295,9 +295,10 @@ def train_with_fake_epochs(
         raise NotImplementedError(f'{config["loss_fn"]} unsupported')
 
     for iteration, batch in enumerate(
-        tqdm(train_loader, leave=True, desc="Train iteration", dynamic_ncols=True)
+        tqdm(train_loader, leave=True, desc="Train iteration", dynamic_ncols=True),
+        start=1,  # to match iter_per_epoch, etc
     ):
-        if iteration % iter_per_epoch == 0:
+        if (iteration == 1) or (iteration % (iter_per_epoch + 1) == 0):
             epoch, t_epoch_start, log_info = fake_epoch_start(epoch)
         c_exp.set_step(iteration)
 
@@ -365,7 +366,7 @@ def train_with_fake_epochs(
                 f"{config['loss_fn']} loss Train", iqa_loss_item, step=iteration
             )
 
-        if (iteration > 0) and (iteration % iter_per_epoch == 0):
+        if iteration % iter_per_epoch == 0:
             max_val_v = fake_epoch_end(epoch, train_loss.item(), max_val_v)
             epoch_pbar.update()
             epoch += 1
