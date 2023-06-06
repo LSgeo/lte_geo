@@ -1,19 +1,23 @@
 model_dir: D:/luke/lte_geo/save/_train_swinir-lte_geo
-model_name: unwilling_cocoa # unwilling_cocoa #joint_fly #unwilling_cocoa #joint_fly ###holy_molding # beige_ottoman  #average_aerator # artificial_observatory #beige_ottoman
-inference_output_dir: # blank or Custom path
+model_name: resident_plate_9730
+# major_fish  #joint_fly # unwilling_cocoa # parliamentary_skyscraper ###holy_molding # beige_ottoman  #average_aerator # artificial_observatory #beige_ottoman
+# range_model_names: [silky_pie, annoyed_degree, eligible_toast, olympic_mackerel, major_fish, disappointed_neutron]
+# range_model_scales: [2,3,4,5,6,9]
+# inference_output_dir: D:/luke/lte_geo/inference/range_test # blank or Custom path
 num_workers: 0
-rgb_range: 2 # noddyverse min max clip +-5000 to range [-1, 1]
+rgb_range: 1 
 eval_bsize: 360_000 #360_000 # Reduce RAM usage? num points per model call
 limit_to_plots: True  # subset dataset to "interesting" plots, OR don't plot and calc metrics
 plot_samples: [[17, 20, 70, 91, 143, 185, 199, 200], [0, 1]]
 custom_grids: False
 
 do_real_inference: True
-# real_inference_path: U:/RTIO_Grids_1A/AngeloNorth_TMI_60m.ers 
-real_inference_path: D:/luke/data_source/P1134/P1134-grid-tmi.ers 
-real_inference_scale: 5
-real_inference_size: 360 # use same as training scale size
-# LR tile size ^ aka train inp_size
+real_inference_path: "D:/luke/data_source/p1260_test_area/p1260_1.ers"
+# real_inference_path: D:/luke/data_source/p1260_test_area/P1260-grid-tmi.ers
+# real_inference_path: U:/RTIO_Grids_1A/AngeloNorth_TMI_40m.ers 
+# real_inference_path: D:/luke/data_source/P1134/P1134-grid-tmi.ers 
+real_inference_scale: 4
+real_inference_size: 45 # trained inp_size
 
 test_dataset:
   batch_size: 1
@@ -29,15 +33,15 @@ test_dataset:
       heading: NS
       load_magnetics: True # Norm [+-5000]
       load_gravity: False # Norm [400,500]
-      norm: # [-5000,5000]
+      norm: # [-10000, 10000]
       noise: # 3 sources of noise, decimal % of norm range
-        gaussian: 0.15 # 0.3 #  noise applied to all cells
-        levelling: 0.1 # 0.2 # noise applied to sampled columns in array (sample lines)
+        gaussian: 0 #.1 #10  #  noise applied to all cells
+        levelling: 0 #.02 #02  # noise applied to sampled columns in array (sample lines)
         # geology: 0.05 #  gradient applied to grid. Not implemented.
   wrapper:
     name: noddyverse_wrapper
     args:
       crop: False
-      inp_size: 36
-      scale_min: 5
-      scale_max: 5
+      inp_size: 45
+      scale_min: 4
+      scale_max: 4

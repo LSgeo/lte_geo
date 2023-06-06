@@ -524,8 +524,8 @@ class CustomTestDataset(HRLRNoddyverse):
         # self.inp_size = input_size,
         self.crop = kwargs.get("crop")
         self.sp = {
-            "hr_line_spacing": kwargs.get("hr_line_spacing", 1),
-            "sample_spacing": kwargs.get("sample_spacing", 20),
+            "hr_line_spacing": kwargs.get("hr_line_spacing", 4),
+            "sample_spacing": kwargs.get("sample_spacing", 1),
             "heading": kwargs.get("heading", "NS"),  # "EW"
         }
         self.len = len(sample)
@@ -611,7 +611,7 @@ def test_custom_data(model, scale, opts, cfg=None):
 
 
 @torch.no_grad()
-def real_inference(filepath: Path, cfg, scale: float, device="cuda", max_s=128):
+def real_inference(filepath: Path, cfg, scale: float, device="cuda", max_s=None):
     """Run inference on square (only?) grid data without GT.
     Provide cfg as used for training/testing - at least model_dir & model_name.
     max_crop limits grids to RAM-tolerable size
@@ -619,7 +619,7 @@ def real_inference(filepath: Path, cfg, scale: float, device="cuda", max_s=128):
     """
 
     filepath = Path(filepath)
-    assert filepath.exists(), filepath.absolute()
+    assert filepath.exists(), f"Missing {filepath.absolute()}"
     nan_val = -99999
 
     if normrange := cfg["test_dataset"]["dataset"]["args"]["norm"]:
@@ -686,7 +686,7 @@ def real_inference(filepath: Path, cfg, scale: float, device="cuda", max_s=128):
     return output_sr
 
 
-def input_tiler(grid: torch.Tensor, shape=128):
+def input_tiler(grid: torch.Tensor, shape : int = None):
     """Tile grid (Tensor) to shape
     Grid here should be H x W (unbatched)
     Output lr_tiles will be n x C x shape x shape
@@ -818,7 +818,7 @@ if __name__ == "__main__":
         # plt.imshow(sr, origin="lower")
         # plt.colorbar()
 
-        out_file = Path(cfg["inference_output_dir"] or "inference") / (
+        out_file = Path(cfg.get("inference_output_dir") or "inference") / (
             f"{filepath.stem}_sr-"
             f"{scale}x_"
             f"{cfg['model_name']}_"
