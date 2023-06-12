@@ -96,8 +96,7 @@ class HRLRNoddyverse(NoddyDataset):
         """
         w, e, s, n = np.array([0, d, 0, d], dtype=np.float32)
         cs = ls / cs_fac  # Cell size is e.g. 1/4 line spacing
-        gridder = vd.ScipyGridder("cubic")
-        gridder = gridder.fit(coordinates=(x, y), data=z)
+        gridder = vd.Cubic().fit(coordinates=(x, y), data=z)
         grid = gridder.grid(
             data_names="forward",
             coordinates=np.meshgrid(
@@ -528,8 +527,7 @@ class HRLRReal(RealDataset):
         """
         w, e, s, n = np.array([0, d, 0, d], dtype=np.float32)
         cs = ls / cs_fac  # Cell size is e.g. 1/4 line spacing
-        gridder = vd.ScipyGridder("cubic")
-        gridder = gridder.fit(coordinates=(x, y), data=z)
+        gridder = vd.Cubic().fit(coordinates=(x, y), data=z)
         grid = gridder.grid(
             data_names="forward",
             coordinates=np.meshgrid(
