@@ -237,6 +237,7 @@ class NoddyverseWrapper(Dataset):
         augment=False,
         sample_q=None,
         crop=False,
+        **kwargs,
     ):
         self.dataset = dataset
         self.dataset.inp_size = inp_size
@@ -353,6 +354,7 @@ class LargeRasterData:
         if self.cache_path.exists():
             print(f"Loading cached grid from {self.cache_path.absolute()}")
         else:
+            Path("C:/Users/Public/scratch/temp").mkdir(exist_ok=True, parents=True)
             print(f"Caching to {self.cache_path.absolute()}")
             if self.file_path.suffix == ".tif":
                 import tifffile
@@ -379,13 +381,12 @@ class LargeRasterData:
         - Unfold the grid into tiles, which may contain nan values
         - Drop any nan values, either from the original grid or padding
 
-        offset: shift patch by a percentage of patch_size
-        e.g. offset = 50 means top and left (iirc) are padded by .5 * patch_size,
-            making tiles shift by half
+        offset: offset number of cells to pad to make patches unique
+        e.g. [0, 51, 103, 157]
         """
 
         s = patch_size
-        off_pad = int((offset / 100) * s)
+        off_pad = offset
         self.off_pad = off_pad
 
         # Pad to make integer number of tiles across extent.
@@ -427,6 +428,7 @@ class LargeRasterData:
         print(f"Saved patches with shape {self.patches.shape} to {out_path.absolute()}")
 
     def cleanup(self):
+        self.grid = None
         self.cache_path.unlink()
 
     def _eg():
@@ -434,10 +436,10 @@ class LargeRasterData:
         # from datasets.noddyverse import LargeRasterData
         trainingdata = LargeRasterData(
             file_path=Path(
-                "C:/Users/Public/scratch/WA_20m_Mag_Merge_v1_2020/State Map surveys/processing/WA_MAG_20m_MGA2020_sub80m_train.tif"
+                "C:/Users/Public/scratch/WA_20m_Mag_Merge_v1_2020/State Map surveys/processing/WA_MAG_20m_MGA2020_sub100m_train_2.tif"
             )
         )
-        for offset in [0, 23, 53, 79]:
+        for offset in [0, 53, 107, 150]:
             trainingdata.patch_extract(patch_size=200, offset=offset)
             trainingdata.save_npy()
         trainingdata.cleanup()
@@ -446,7 +448,8 @@ class LargeRasterData:
         stacked = []
         for arr in Path(
             "C:/Users/Public/scratch/WA_20m_Mag_Merge_v1_2020/State Map surveys/processing"
-        ).glob("*offset_*.npy"):
+        ).glob("*2_offset_*.npy"):
+            print("Stacking", arr.name)
             stacked.append(np.load(arr))
 
         stacked = np.concatenate(stacked, axis=0)
