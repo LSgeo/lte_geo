@@ -71,7 +71,7 @@ def make_data_loaders():
     return train_loader, val_loader, preview_loader
 
 
-def prepare_training(train_loader, preview_loader):
+def prepare_training(train_loader, val_loader, preview_loader):
     if config.get("resume") is not None:
         # Find and load saved model
         best_or_last = "last"
@@ -104,6 +104,17 @@ def prepare_training(train_loader, preview_loader):
                     optimizer, **config.get("scheduler")["multi_step_lr"]
                 )
 
+        val_l1, val_res, ssim_res = eval_psnr(
+            val_loader,
+            model,
+            eval_type=config.get("eval_type"),
+            eval_bsize=config.get("eval_bsize"),
+            c_exp=c_exp,
+            shave=6,
+        )
+        c_exp.log_metric("L1 loss Val", val_l1, step=0)
+        c_exp.log_metric("PSNR Val", val_res, step=0)
+        c_exp.log_metric("SSIM Val", ssim_res, step=0)
         log_images(preview_loader, model, c_exp)
 
     else:
@@ -396,7 +407,7 @@ def main(config_, save_path):
 
     train_loader, val_loader, preview_loader = make_data_loaders()
     model, optimizer, epoch_start, lr_scheduler = prepare_training(
-        train_loader, preview_loader
+        train_loader, val_loader, preview_loader
     )
     scaler = GradScaler(enabled=config.get("use_amp_scaler", False))
 
@@ -415,7 +426,7 @@ def main(config_, save_path):
     )
     tags.extend(
         ["aug"]
-        if any(config["train_dataset"]["wrapper"]["args"]["augmentations"])
+        if any(config["train_dataset"]["wrapper"]["args"].get("augmentations"))
         else []
     )
     scale_tags = [
