@@ -6,8 +6,8 @@ from torch.utils.data import Dataset
 
 from mlnoddy.datasets import NoddyDataset, Norm
 
-from datasets import register
-from utils import to_pixel_samples
+from . import register
+from ..utils import to_pixel_samples
 
 rng = np.random.default_rng(21)
 

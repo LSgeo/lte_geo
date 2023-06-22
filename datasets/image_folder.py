@@ -9,7 +9,7 @@ import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
 
-from datasets import register
+from . import register
 
 
 @register("image-folder")

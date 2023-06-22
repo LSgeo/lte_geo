@@ -8,9 +8,9 @@ import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
 
-from datasets import register
-from utils import to_pixel_samples
-from utils import make_coord
+from . import register
+from ..utils import to_pixel_samples
+from ..utils import make_coord
 
 
 @register("sr-implicit-paired")

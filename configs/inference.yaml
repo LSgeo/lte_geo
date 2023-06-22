@@ -1,9 +1,9 @@
-model_dir: D:/luke/lte_geo/save/_train_swinir-lte_geo
+model_dir: D:/luke/phd/ch2/ltegeo/save/_train_swinir-lte_geo
 model_name: resident_plate_9730
 # major_fish  #joint_fly # unwilling_cocoa # parliamentary_skyscraper ###holy_molding # beige_ottoman  #average_aerator # artificial_observatory #beige_ottoman
 # range_model_names: [silky_pie, annoyed_degree, eligible_toast, olympic_mackerel, major_fish, disappointed_neutron]
 # range_model_scales: [2,3,4,5,6,9]
-# inference_output_dir: D:/luke/lte_geo/inference/range_test # blank or Custom path
+inference_output_dir: D:/luke/phd/ch2/ltegeo/inference/range_test # blank or Custom path
 num_workers: 0
 rgb_range: 1 
 eval_bsize: 360_000 #360_000 # Reduce RAM usage? num points per model call

@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import models
-from models import register
-from utils import make_coord
+from . import models
+from . import register
+from ..utils import make_coord
 
 
 @register("metasr")

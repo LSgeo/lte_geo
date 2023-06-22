@@ -1,6 +1,6 @@
 import torch.nn as nn
 
-from models import register
+from . import register
 
 
 @register('mlp')

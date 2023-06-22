@@ -2,29 +2,29 @@ from functools import partial
 from pathlib import Path
 
 import colorcet as cc
-import harmonica as hm
+# import harmonica as hm
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import xarray as xr
-import xrft
+# import xrft
 import yaml
 from PIL import Image
-from skimage.feature import canny
+# from skimage.feature import canny
 from torch.utils.data import DataLoader, Subset
 from tqdm.auto import tqdm
 
-import datasets as dsets
-import models
-import utils
-from test import reshape, batched_predict
+from . import datasets as dsets
+from . import models
+from . import utils
+from .test import reshape, batched_predict
 from mlnoddy.datasets import parse_geophysics, load_noddy_csv, Norm
 
 import rasterio
 import tifffile
-from datasets.noddyverse import HRLRNoddyverse, NoddyverseWrapper
-from datasets.noddyverse import load_naprstek_synthetic as load_naprstek
+from .datasets.noddyverse import HRLRNoddyverse, NoddyverseWrapper
+from .datasets.noddyverse import load_naprstek_synthetic as load_naprstek
 
 mpl.rcParams["font.size"] = 8.0
 mpl.rcParams["figure.dpi"] = 600

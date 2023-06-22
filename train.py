@@ -17,10 +17,10 @@ from torch.optim.lr_scheduler import MultiStepLR
 from torch.cuda.amp import autocast, GradScaler
 from tqdm import tqdm
 
-import datasets
-import models
-import utils
-from test import reshape, eval_psnr
+from ltegeo import datasets
+from ltegeo import models
+from ltegeo import utils
+from ltegeo.test import reshape, eval_psnr
 
 
 def make_data_loader(spec, tag=""):
@@ -446,7 +446,7 @@ def main(config_, save_path):
     c_exp.add_tags(tags)
 
     c_exp.log_parameters(flatten_dict(config))
-    c_exp.log_code("datasets/noddyverse.py")
+    c_exp.log_code("ltegeo/datasets/noddyverse.py")
 
     train_with_fake_epochs(
         train_loader,
@@ -491,7 +491,7 @@ def flatten_dict(cfg, sep=" | "):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--config", default="D:/luke/lte_geo/configs/train_swinir-lte_geo.yaml"
+        "--config", default="D:/luke/phd/ch2/ltegeo/configs/train_swinir-lte_geo.yaml"
     )
     parser.add_argument("--name", default=None)
     parser.add_argument("--tag", default=None)
@@ -509,7 +509,7 @@ if __name__ == "__main__":
         save_name = "_" + args.config.split("/")[-1][: -len(".yaml")]
     if args.tag is not None:
         save_name += "_" + args.tag
-    save_path = os.path.join("./save", save_name)
+    save_path = os.path.join("D:/luke/phd/ch2/ltegeo/save", save_name)
 
     main(config, save_path)
     print("Finished.")

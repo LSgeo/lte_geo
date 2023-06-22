@@ -17,12 +17,12 @@ import yaml
 from PIL import Image
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
-
-import datasets
-import models
-import utils
-from datasets.noddyverse import HRLRNoddyverse
 from mlnoddy.datasets import Norm, parse_geophysics
+
+from . import datasets
+from . import models
+from . import utils
+from .datasets.noddyverse import HRLRNoddyverse
 
 
 def batched_predict(model, inp, coord, cell, bsize):

@@ -4,7 +4,7 @@ from argparse import Namespace
 import torch
 import torch.nn as nn
 
-from models import register
+from . import register
 
 
 def default_conv(in_channels, out_channels, kernel_size, bias=True):
