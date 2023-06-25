@@ -236,6 +236,7 @@ class NoddyverseWrapper(Dataset):
         augment=False,
         sample_q=None,
         crop=False,
+        mode="lte",
         **kwargs,
     ):
         self.dataset = dataset
@@ -246,6 +247,7 @@ class NoddyverseWrapper(Dataset):
         self.augment = augment
         self.sample_q = sample_q  # clip hr samples to same length
         self.crop = crop
+        self.mode = mode
 
     def __len__(self):
         return len(self.dataset)
@@ -261,6 +263,10 @@ class NoddyverseWrapper(Dataset):
 
         data["hr_grid"] = torch.from_numpy(data["hr_grid"]).to(torch.float32)
         data["lr_grid"] = torch.from_numpy(data["lr_grid"]).to(torch.float32)
+
+        if "rdn" in self.mode:
+            return {"hr": data["hr_grid"], "lr": data["lr_grid"], "gt": data["gt_grid"]}
+
         # data contains the hr and lr grids at their correct sizes.
 
         hr_coord, hr_val = to_pixel_samples(data["hr_grid"].contiguous())
@@ -274,12 +280,13 @@ class NoddyverseWrapper(Dataset):
         hr_cell[:, 0] *= 2 / data["hr_grid"].shape[-2]
         hr_cell[:, 1] *= 2 / data["hr_grid"].shape[-1]
 
-        return {
-            "inp": data["lr_grid"],
-            "coord": hr_coord,
-            "cell": hr_cell,
-            "gt": hr_val,
-        }
+        if "lte" in self.mode:
+            return {
+                "inp": data["lr_grid"],
+                "coord": hr_coord,
+                "cell": hr_cell,
+                "gt": hr_val,
+            }
 
 
 def load_naprstek_synthetic(
