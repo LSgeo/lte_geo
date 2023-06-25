@@ -352,20 +352,20 @@ def plot_gt(ax: plt.Axes, gt: np.ndarray, args: dict, scale: int = 1):
     cgry = ax.imshow(
         gt,
         cmap=cc.cm.CET_L1,
-        interpolation="nearest",
+        interpolation=None,
         origin="lower",
-        extent=(0, 180 * 20, 0, 180 * 20),
+        extent=(0, gt.shape[0] * 20, 0, gt.shape[0] * 20),
     )
     cclr = ax.imshow(
         gt,
         cmap=cc.cm.CET_L8,
-        interpolation="nearest",
+        interpolation=None,
         origin="lower",
-        extent=(0, 180 * 20, 0, 180 * 20),
+        extent=(0, gt.shape[0] * 20, 0, gt.shape[0] * 20),
         alpha=mask,
     )
-    plt.colorbar(mappable=cgry, ax=ax, location="bottom", label="Unsampled TMI (nT)")
-    plt.colorbar(mappable=cclr, ax=ax, location="bottom", label="Sampled TMI (nT)")
+    # plt.colorbar(mappable=cgry, ax=ax, location="bottom", label="Unsampled TMI (nT)")
+    # plt.colorbar(mappable=cclr, ax=ax, location="bottom", label="Sampled TMI (nT)")
     ax.set_ylim(0, gt.shape[0] * 20)
     ax.set_xlabel("x (m)")
     ax.set_ylabel("y (m)")
@@ -379,6 +379,8 @@ def plot_gt(ax: plt.Axes, gt: np.ndarray, args: dict, scale: int = 1):
     )
     ax.tick_params(axis="x", labelrotation=90)
     # axgt.vlines(range(0, gt.shape[1], args["hr_line_spacing"] * scale),0,gt.shape[0],color="r",linewidth=1,)  # hr_line spacing * scale !!!
+
+    return cclr
 
 
 def save_pred(
@@ -686,7 +688,7 @@ def real_inference(filepath: Path, cfg, scale: float, device="cuda", max_s=None)
     return output_sr
 
 
-def input_tiler(grid: torch.Tensor, shape : int = None):
+def input_tiler(grid: torch.Tensor, shape: int = None):
     """Tile grid (Tensor) to shape
     Grid here should be H x W (unbatched)
     Output lr_tiles will be n x C x shape x shape
