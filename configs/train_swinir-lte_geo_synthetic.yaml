@@ -1,21 +1,21 @@
 use_comet: True
 use_amp_scaler: False  # Currently causes NaN
 use_amp_autocast: False  # Seems to make results bad lol
-num_workers: 6 # ~6+ on 10900KF / 3090
+num_workers: 8 # ~6+ on 10900KF / 3090
 eval_type: noddyverse-4
 plot_samples: [-8_001, -7969]
-rgb_range: 2  # noddyverse min max clip +-5000
+rgb_range: 1  # noddyverse min max clip +-5000
 shave: 6
 model_dir: D:/luke/phd/ch2/ltegeo/save/_train_swinir-lte_geo/
-resume: major_fish_9316 # disappointed_neutron_9322 # colossal_south_9912
-only_resume_weights: True
+resume: # major_fish_9316 # disappointed_neutron_9322 # colossal_south_9912
+only_resume_weights: False
 
 train_dataset:
   dataset:
     name: noddyverse_dataset
     args:
       repeat: 1  # number of times to iterate entire dataset - i.e. epochs (but of the below slice)
-      use_dset_slice: [0, 960_000]  # restrict dataset to [n:m]  # ~ 1 hour / 100k samples
+      use_dset_slice: [0, 500_000]  # restrict dataset to [n:m]  # ~ 1 hour / 100k samples
       root_path: "C:/Users/Public/scratch/Noddy_1M" #C:/Users/Public/scratch/noddyverse/train
       noddylist: "C:/Users/Public/scratch/Noddy_1M/models.csv"
       blocklist: "C:/Users/Public/scratch/Noddy_10k/models_10k.csv"  # Don't allow use of models in the 10k test set.
@@ -30,20 +30,20 @@ train_dataset:
     name: noddyverse_wrapper
     args:
       crop: True  # To reduce RAM in batch training? # False if max scale > 4 
-      inp_size: 45
+      inp_size: 30
       augmentations:
         flip: False
         rotate: False
         sample: False
-      sample_q: 2025
-      scale_min: 4
-      scale_max: 4
+      sample_q: 900
+      scale_min: 6
+      scale_max: 6
       # inp_size: 45  # LR input size (45) for HR line spacing 4. For HRLS 1, 4*45
       # sample_q: 1296  #2025 # inp_size ** 2 (45*45)
       # scale_min: 5
       # scale_max: 5  # max 4 with no other changes. up to 10, hardcoded to exclude 7
       # cs_fac: 4  # Hardcoded to 4. If you set to 5, need to hardcode exclude scale 8.
-  batch_size: 8 #1 #4
+  batch_size: 4 #1 #4
 
 val_dataset:
   dataset:
@@ -65,11 +65,11 @@ val_dataset:
     name: noddyverse_wrapper
     args:
       crop: True 
-      inp_size: 45
-      sample_q: 2025
-      scale_min: 4
-      scale_max: 4
-  batch_size: 8
+      inp_size: 30
+      sample_q: 900
+      scale_min: 6
+      scale_max: 6
+  batch_size: 4
 loss_fn: l1
 
 model:

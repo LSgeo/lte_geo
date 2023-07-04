@@ -446,7 +446,7 @@ def main(config_, save_path):
     c_exp.add_tags(tags)
 
     c_exp.log_parameters(flatten_dict(config))
-    c_exp.log_code("ltegeo/datasets/noddyverse.py")
+    c_exp.log_code("ch2/ltegeo/datasets/noddyverse.py")
 
     train_with_fake_epochs(
         train_loader,
@@ -491,7 +491,7 @@ def flatten_dict(cfg, sep=" | "):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--config", default="D:/luke/phd/ch2/ltegeo/configs/train_swinir-lte_geo.yaml"
+        "--config", default="D:/luke/phd/ch2/ltegeo/configs/train_swinir-lte_geo_synthetic.yaml"
     )
     parser.add_argument("--name", default=None)
     parser.add_argument("--tag", default=None)
