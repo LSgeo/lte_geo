@@ -28,8 +28,8 @@ test_dataset:
       noddylist: C:/Users/Public/scratch/Noddy_10k/models_10k.csv
       blocklist:
       events: 
-      hr_line_spacing: 4 # 4, so gridded shape is same as gt.
-      sample_spacing: 1
+      hr_line_spacing: 80 # 4, so gridded shape is same as gt.
+      sample_spacing: 20
       heading: NS
       load_magnetics: True # Norm [+-5000]
       load_gravity: False # Norm [400,500]

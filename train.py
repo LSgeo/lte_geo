@@ -17,10 +17,10 @@ from torch.optim.lr_scheduler import MultiStepLR
 from torch.cuda.amp import autocast, GradScaler
 from tqdm import tqdm
 
-from ltegeo import datasets
-from ltegeo import models
-from ltegeo import utils
-from ltegeo.test import reshape, eval_psnr
+from ch2.ltegeo import datasets
+from ch2.ltegeo import models
+from ch2.ltegeo import utils
+from ch2.ltegeo.test import reshape, eval_psnr
 
 
 def make_data_loader(spec, tag=""):

@@ -20,8 +20,8 @@ train_dataset:
       noddylist: "C:/Users/Public/scratch/Noddy_1M/models.csv"
       blocklist: "C:/Users/Public/scratch/Noddy_10k/models_10k.csv"  # Don't allow use of models in the 10k test set.
       events:
-      hr_line_spacing: 4  # array coords. 1 == 20 m Noddyverse
-      sample_spacing: 1
+      hr_line_spacing: 80  # m spatial units
+      sample_spacing: 20
       heading: NS
       norm: [-10000, 10000]
       load_magnetics: True
@@ -54,8 +54,8 @@ val_dataset:
       root_path: "C:/Users/Public/scratch/Noddy_1M"
       noddylist: "C:/Users/Public/scratch/Noddy_1M/models.csv"
       blocklist: "C:/Users/Public/scratch/Noddy_10k/models_10k.csv" 
-      hr_line_spacing: 4
-      sample_spacing: 1
+      hr_line_spacing: 80
+      sample_spacing: 20
       heading: NS
       norm: [-10000, 10000]
       load_magnetics: True
