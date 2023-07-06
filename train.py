@@ -264,7 +264,7 @@ def train_with_fake_epochs(
             log_info.append(f"val: psnr={val_res:.4f}")
             c_exp.log_metric("L1 loss Val", val_l1)
             c_exp.log_metric("PSNR Val", val_res)
-            c_exp.log_metric("SSIM Val", ssim_res)
+            # c_exp.log_metric("SSIM Val", ssim_res)
             # writer.add_scalars('psnr', {'val': val_res}, curr_epoch)
             if val_res > max_val_v:
                 max_val_v = val_res
@@ -322,9 +322,9 @@ def train_with_fake_epochs(
             pred = model(batch["inp"], batch["coord"], batch["cell"])
             l1_loss = l1_loss_fn(pred, batch["gt"])
 
-            if torch.isnan(pred).any():
-                log(f"\npred had nans, skipped iter {iteration} ")
-                continue
+            # if torch.isnan(pred).any():
+            #     log(f"\npred had nans, skipped iter {iteration} ")
+            #     continue
             # if pred.min() < -0 or pred.max() > 1 or torch.isnan(pred).any():
             #     log(f"Value of {pred.min()=} {pred.max()=} out of range")
             psnr = metric_fn(
@@ -428,7 +428,7 @@ def main(config_, save_path):
         ["aug"]
         if any(config["train_dataset"]["wrapper"]["args"].get("augmentations"))
         else []
-    )
+    )  # TODO FIX - returns true even if all augs are false
     scale_tags = [
         f"{s}x"
         for s in range(
