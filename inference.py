@@ -2,16 +2,16 @@ from functools import partial
 from pathlib import Path
 
 import colorcet as cc
-# import harmonica as hm
+import harmonica as hm
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import xarray as xr
-# import xrft
+import xrft
 import yaml
 from PIL import Image
-# from skimage.feature import canny
+from skimage.feature import canny
 from torch.utils.data import DataLoader, Subset
 from tqdm.auto import tqdm
 
@@ -43,7 +43,7 @@ def load_model(cfg, device="cuda", best_or_last="last"):
         )
 
     model_spec = torch.load(model_paths[0], map_location=device)["model"]
-    model = models.make(model_spec, load_sd=True).to(device)
+    model = models.make(model_spec, load_sd=True).to(device, non_blocking=True)
     return model, model_name, model_paths
 
 
@@ -156,18 +156,18 @@ def main():
     return results_dict
 
 
-def verde_nvd(grid, order=1):
-    """Vertical derivative with order n using Verde."""
+# def verde_nvd(grid, order=1):
+#     """Vertical derivative with order n using Verde."""
 
-    grid = xr.DataArray(
-        grid,
-        coords={"northing": range(grid.shape[1]), "easting": range(grid.shape[0])},
-        dims=["northing", "easting"],
-    )
-    pad_width = {"easting": grid.shape[1] // 3, "northing": grid.shape[0] // 3}
-    grid_padded = xrft.pad(grid, pad_width)
-    deriv_upward = hm.derivative_upward(grid_padded, order)
-    return xrft.unpad(deriv_upward, pad_width).values
+#     grid = xr.DataArray(
+#         grid,
+#         coords={"northing": range(grid.shape[1]), "easting": range(grid.shape[0])},
+#         dims=["northing", "easting"],
+#     )
+#     pad_width = {"easting": grid.shape[1] // 3, "northing": grid.shape[0] // 3}
+#     grid_padded = xrft.pad(grid, pad_width)
+#     deriv_upward = hm.derivative_upward(grid_padded, order)
+#     return xrft.unpad(deriv_upward, pad_width).values
 
 
 @torch.no_grad()

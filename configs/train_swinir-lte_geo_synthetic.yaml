@@ -2,7 +2,7 @@ use_comet: True
 use_amp_scaler: False  # Currently causes NaN
 use_amp_autocast: False  # Seems to make results bad lol
 num_workers: 8 # ~6+ on 10900KF / 3090
-eval_type: noddyverse-4
+eval_type: noddyverse-5
 plot_samples: [-8_001, -7969]
 rgb_range: 1  # noddyverse min max clip +-5000
 shave: 6
@@ -30,14 +30,14 @@ train_dataset:
     name: noddyverse_wrapper
     args:
       crop: True  # To reduce RAM in batch training? # False if max scale > 4 
-      inp_size: 30
       augmentations:
         flip: False
         rotate: False
         sample: False
-      sample_q: 900
-      scale_min: 6
-      scale_max: 6
+      inp_size: 36
+      sample_q: 1296
+      scale_min: 5
+      scale_max: 5
       # inp_size: 45  # LR input size (45) for HR line spacing 4. For HRLS 1, 4*45
       # sample_q: 1296  #2025 # inp_size ** 2 (45*45)
       # scale_min: 5
@@ -65,10 +65,10 @@ val_dataset:
     name: noddyverse_wrapper
     args:
       crop: True 
-      inp_size: 30
-      sample_q: 900
-      scale_min: 6
-      scale_max: 6
+      inp_size: 36
+      sample_q: 1296
+      scale_min: 5
+      scale_max: 5
   batch_size: 4
 loss_fn: l1
 

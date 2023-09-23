@@ -2,13 +2,16 @@ name: ltep2
 channels:
   - nvidia
   - pytorch
-  - conda-forge
+  # - conda-forge
 dependencies:
   - python[version='>=3.11']
   - pytorch::pytorch[version='>=2']
   - pytorch::torchvision[version='>=0.15']
   - pytorch-cuda[version='>=11.8']
-  - conda-forge::timm
+  - opencv=4
+  - python-lmdb
+  - tensorboardx
+  # - conda-forge::timm
   # - comet_ml::comet_ml[version='==3.31']
   - tensorboardx
   - tqdm
@@ -17,15 +20,15 @@ dependencies:
   - numpy
   - xarray
   - scikit-image
-  - verde
+  # - verde
   - imageio
   - black
   - rope
   - flake8 
   - jupyter
   - ipykernel
-  - nb_conda
-  - photosynthesis-team::piq
+  # - nb_conda
+  # - photosynthesis-team::piq
 # pip
   # - comet_ml==3.31
 prefix: D:\luke\Miniconda3\envs\ltep2

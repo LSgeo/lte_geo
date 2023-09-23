@@ -356,11 +356,11 @@ class LargeRasterData:
         self.file_path = Path(file_path)
         self.nan_val = nan_val
 
-        self.cache_path = Path("C:/Users/Public/scratch/temp") / ".cached_grid.npy"
+        self.cache_path = Path("temp") / ".cached_grid.npy"
         if self.cache_path.exists():
             print(f"Loading cached grid from {self.cache_path.absolute()}")
         else:
-            Path("C:/Users/Public/scratch/temp").mkdir(exist_ok=True, parents=True)
+            Path("temp").mkdir(exist_ok=True, parents=True)
             print(f"Caching to {self.cache_path.absolute()}")
             if self.file_path.suffix == ".tif":
                 import tifffile
