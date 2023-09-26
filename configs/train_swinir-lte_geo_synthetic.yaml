@@ -1,9 +1,9 @@
 use_comet: True
 use_amp_scaler: False  # Currently causes NaN
 use_amp_autocast: False  # Seems to make results bad lol
-num_workers: 12 # ~6+ on 10900KF / 3090
-eval_type: noddyverse-4
-plot_samples: [-8_001, -7969]
+num_workers: 14 # ~6+ on 10900KF / 3090
+eval_type: noddyverse-5
+plot_samples: [32, 65]
 rgb_range: 1  # noddyverse min max clip +-5000
 shave: 6
 model_dir: D:/luke/phd/ch2/ltegeo/save/_train_swinir-lte_geo/
@@ -20,8 +20,11 @@ train_dataset:
       noddylist: "C:/Users/Public/scratch/Noddy_1M/models.csv"
       blocklist: "C:/Users/Public/scratch/Noddy_10k/models_10k.csv"  # Don't allow use of models in the 10k test set.
       events:
-      hr_line_spacing: 4  # array coords. 1 == 20 m Noddyverse
-      sample_spacing: 1
+      # hr_line_spacing: lls / scale # 4  # array coords. 1 == 20 m Noddyverse
+      input_cell_size: 20 # m
+      lr_line_spacing: 400 # m  # 20 * 20 m == 400 m
+      sample_spacing: 20 # m
+      # cs_fac: 4  # Hardcoded to 4
       heading: NS
       norm: [-10000, 10000]
       load_magnetics: True
@@ -29,33 +32,29 @@ train_dataset:
   wrapper:
     name: noddyverse_wrapper
     args:
-      crop: True  # To reduce RAM in batch training? # False if max scale > 4 
       augmentations:
         flip: False
         rotate: False
         sample: False
-      inp_size: 30
-      sample_q: 900
-      scale_min: 2
-      scale_max: 6
-      # inp_size: 45  # LR input size (45) for HR line spacing 4. For HRLS 1, 4*45
-      # sample_q: 1296  #2025 # inp_size ** 2 (45*45)
-      # scale_min: 5
-      # scale_max: 5  # max 4 with no other changes. up to 10, hardcoded to exclude 7
-      # cs_fac: 4  # Hardcoded to 4. If you set to 5, need to hardcode exclude scale 8.
-  batch_size: 16 #1 #4
+      crop: False # Don't use me.
+      inp_size: 25
+      sample_q: 2500 # (inp_size * min(scale))**2
+      scales: [2, 4, 10]  # only support 2, 4, 10.
+  batch_size: 32 #1 #4
 
 val_dataset:
   dataset:
     name: noddyverse_dataset
     args:
-      repeat: 1
-      use_dset_slice: [-8001, -1]  # [n:m] slice notation, can be negative
       root_path: "C:/Users/Public/scratch/Noddy_1M"
+      repeat: 1
+      use_dset_slice: [-1001, -1]  # [n:m] slice notation, can be negative
       noddylist: "C:/Users/Public/scratch/Noddy_1M/models.csv"
       blocklist: "C:/Users/Public/scratch/Noddy_10k/models_10k.csv" 
-      hr_line_spacing: 4
-      sample_spacing: 1
+      input_cell_size: 20
+      lr_line_spacing: 400 # m  # 20 * 20 m == 400 m
+      sample_spacing: 20
+      # cs_fac: 4  # Hardcoded to 4
       heading: NS
       norm: [-10000, 10000]
       load_magnetics: True
@@ -64,12 +63,11 @@ val_dataset:
   wrapper:
     name: noddyverse_wrapper
     args:
-      crop: True 
-      inp_size: 30
-      sample_q: 900
-      scale_min: 5
-      scale_max: 5
-  batch_size: 4
+      crop: False 
+      inp_size: 25
+      sample_q: 2500
+      scales: [2, 4, 10]
+  batch_size: 8
 loss_fn: l1
 
 model:

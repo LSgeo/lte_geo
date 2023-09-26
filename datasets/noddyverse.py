@@ -16,8 +16,10 @@ def subsample(raster, ls, sp):
     """Select points from (raster) according to line spacing (ls) and other
     survey parameters (sp).
     """
-    # input_cell_size = 20 # Noddyverse cell size is 20 m
-    ss = sp["sample_spacing"]  # Sample every n points along line, 1=20m
+    # Noddyverse cell size is 20 m
+    inp_cs = sp["input_cell_size"]
+    ss = int(sp["sample_spacing"] / inp_cs)  # Sample every n points N-S along line
+    ls = int(ls / inp_cs)
 
     x, y = np.meshgrid(
         np.arange(raster.shape[-1]),
@@ -27,9 +29,6 @@ def subsample(raster, ls, sp):
     x = x[::ss, ::ls]
     y = y[::ss, ::ls]
     vals = raster.numpy()[:, ::ss, ::ls].squeeze()  # shape for gridding
-
-    if sp.get("noise"):
-        vals = add_noise(vals, sp)
 
     return x, y, vals
 
@@ -55,67 +54,44 @@ def add_noise(vals, sp):
     return vals
 
 
-def grid(x, y, z, ls, cs_fac=4, d=180):
-    """Min Curvature grid xyz at scale, with ls/cs_fac cell size.
+def grid(x, y, vals, ls, cs_fac=5, d=2000, inp_cs=20):
+    """Min Curvature grid xyz, with ls/cs_fac cell size.
     Params:
-        d: adjustable crop factor, but 180 is best for noddyverse. 200 Max.
+        x, y, vals: subsampled coord/val points
+        ls: line spacing of data
+        cs_fac: 4 or 5 as rule of thumb
+        d: adjustable crop factor, spatial units to match ls
+
     """
     w, e, s, n = np.array([0, d, 0, d], dtype=np.float32)
     cs = ls / cs_fac  # Cell size is e.g. 1/4 line spacing
-    gridder = vd.Cubic().fit(coordinates=(x, y), data=z)
-    grid = gridder.grid(
-        data_names="forward",
-        coordinates=np.meshgrid(
-            np.arange(w, e, step=cs),
-            np.arange(s, n, step=cs),
-            indexing="xy",
-        ),
-    )
+    gridder = vd.Cubic().fit(coordinates=(x * inp_cs, y * inp_cs), data=vals)
+    coordinates = vd.grid_coordinates((w, e, s, n), spacing=cs, pixel_register=True)
+    grid = gridder.grid(data_names="forward", coordinates=coordinates)
     grid = grid.get("forward").values.astype(np.float32)
 
-    # w_grd = self.inp_size * scale.item()
+    if False:
+        import matplotlib.pyplot as plt
 
-    # w_lr = self.inp_size  # No matter what happens, lr is same size eg.48x48
-    # w_hr = self.inp_size * self.scale.item()  # HR is e.g. 480*480 (10x)
-    # # Max usable data is 720x720, which is around 15 times scale (cs_fac=4)
-    # w_grd = w_hr if scale == 1 else w_lr
-
-    # ##
-    # # We want to grid a region that gives d size.
-    # d = int(cs * self.inp_size)
-
-    # # w0 = s0 = 0  # Pixels to move in from boundary
-    # # d = 180  # Nice factors [1,10,] except 7 (and 8 if cs_fac==5).
-
-    # # # Currently grid full extent and crop. May be better to direct grid to size.
-    # # if scale == 1:
-    # #     grid = grid[x0:x0+w_hr, y0:y0+w_hr]
-    # # else:
-    # #     grid = grid[x0:x0+w_lr, y0:y0+w_lr]
-
-    # print(float(scale), grid.shape, np.isnan(grid).any())
-    # grid = grid[:crop, :crop]
+        plt.imshow(grid)
 
     return np.expand_dims(grid, 0)  # add channel dimension
 
 
-def crop(inp_size, scale, lr_grid, hr_grid):
-    """crop to inp_size, otherwise use full extent
-    We grid lr and hr at their full extent and crop the same patch
-    lr_extent is lr size _before_ cropping
-    lr size is self.inp_size _after_ cropping
-    hr size is self.inp_size * self.scale
-    """
-    lr_extent = lr_grid.shape[-1]
-    lr_e = int(torch.randint(low=0, high=lr_extent - inp_size + 1, size=(1,)))
-    lr_n = int(torch.randint(low=0, high=lr_extent - inp_size + 1, size=(1,)))
-    hr_e = lr_e * scale
-    hr_n = lr_n * scale
+# def crop(inp_size, scale, lr_grid, hr_grid):
+#     """crop to inp_size, otherwise use full extent
+#     We grid lr and hr at their full extent and crop the same patch
+#     """
+#     lr_extent = lr_grid.shape[-1]
+#     lr_e = int(torch.randint(low=0, high=lr_extent - inp_size + 1, size=(1,)))
+#     lr_n = int(torch.randint(low=0, high=lr_extent - inp_size + 1, size=(1,)))
+#     hr_e = lr_e * scale
+#     hr_n = lr_n * scale
 
-    lr_grid = lr_grid[:, lr_e : lr_e + inp_size, lr_n : lr_n + inp_size]
-    hr_grid = hr_grid[:, hr_e : hr_e + inp_size * scale, hr_n : hr_n + inp_size * scale]
+#     lr_grid = lr_grid[:, lr_e : lr_e + inp_size, lr_n : lr_n + inp_size]
+#     hr_grid = hr_grid[:, hr_e : hr_e + inp_size * scale, hr_n : hr_n + inp_size * scale]
 
-    return lr_grid, hr_grid
+#     return lr_grid, hr_grid
 
 
 @register("noddyverse_dataset")
@@ -135,19 +111,11 @@ class HRLRNoddyverse(NoddyDataset):
         repeat=1,
         **kwargs,
     ):
-        self.sp = {
-            "hr_line_spacing": kwargs.get("hr_line_spacing", 4),
-            "sample_spacing": kwargs.get("sample_spacing", 1),
-            "heading": kwargs.get("heading", "NS"),  # "EW" untested
-            "noise": kwargs.get(
-                "noise", {"gaussian": None, "geology": None, "levelling": None}
-            ),
-        }
         kwargs["model_dir"] = root_path
-        self.scale = None  # init params
-        self.inp_size = kwargs.get("input_size", None)  # set in super init?
-        self.crop = None  # set after wrapper
+        self.scale = None  # Set in Wrapper
+        # self.crop = None  # Set in Wrapper
         self.repeat = repeat
+        self.sp = {**kwargs}
         super().__init__(**kwargs)
 
     def __len__(self):
@@ -155,29 +123,33 @@ class HRLRNoddyverse(NoddyDataset):
 
     def __getitem__(self, index):
         idx = index % self.len  # for repeating
-        self._process(idx)
+        self.process(idx)
         return self.data
 
-    def _process(self, index, d=180):
+    def process(self, index):
         # d is pixels in x, y to crop NAN from (if last row/col not sampled)
         super()._process(index)
 
-        hls = self.sp["hr_line_spacing"]  # normally set to 4
-        lls = int(hls * self.scale)  # normally set in range(10)
-        hr_x, hr_y, hr_val = subsample(self.data["gt_grid"], hls, self.sp)
+        lls = self.sp["lr_line_spacing"]  # This should be 400
+        hls = lls / self.scale  # scale is 2, 4 or 10. So hls is 200, 100 or 40
+
         lr_x, lr_y, lr_val = subsample(self.data["gt_grid"], lls, self.sp)
+        hr_x, hr_y, hr_val = subsample(self.data["gt_grid"], hls, self.sp)
 
-        # I would like to norm prior gridding, but it breaks value ranges :(
+        if self.sp.get("noise"):
+            lr_val = add_noise(lr_val, self.sp)
+            hr_val = add_noise(hr_val, self.sp)
 
-        # Note - we use scale here as a factor describing how big HR is x LR.
-        # I think this diverges from what my brain normally does.
-        self.data["hr_grid"] = self.norm(grid(hr_x, hr_y, hr_val, ls=hls, d=d))
-        self.data["lr_grid"] = self.norm(grid(lr_x, lr_y, lr_val, ls=lls, d=d))
+        self.data["lr_grid"] = grid(lr_x, lr_y, lr_val, ls=lls)
+        self.data["hr_grid"] = grid(hr_x, hr_y, hr_val, ls=hls)
 
-        if self.crop:
-            self.data["lr_grid"], self.data["hr_grid"] = crop(
-                self.inp_size, self.scale, self.data["lr_grid"], self.data["hr_grid"]
-            )
+        self.data["lr_grid"] = self.norm(self.data["lr_grid"])
+        self.data["hr_grid"] = self.norm(self.data["hr_grid"])
+
+        # if self.crop:
+        #     self.data["lr_grid"], self.data["hr_grid"] = crop(
+        #         self.inp_size, self.scale, self.data["lr_grid"], self.data["hr_grid"]
+        #     )
 
 
 @register("noddyverse_wrapper")
@@ -186,35 +158,25 @@ class NoddyverseWrapper(Dataset):
         self,
         dataset,
         inp_size=None,
-        scale_min=2,
-        scale_max=None,
-        augment=False,
+        augmentations: dict = {},
+        scales=None,
         sample_q=None,
-        crop=False,
         mode="lte",
         **kwargs,
     ):
         self.dataset = dataset
         self.dataset.inp_size = inp_size
-        self.scale = scale_min
-        self.scale_min = scale_min
-        self.scale_max = scale_max or scale_min  # if not scale_max...
-        self.augment = augment
+        self.scales = scales
+        self.aug = augmentations
         self.sample_q = sample_q  # clip hr samples to same length
-        self.crop = crop
         self.mode = mode
+        self.aug_count = 1 + sum(augmentations.values())  # original data included
 
     def __len__(self):
-        return len(self.dataset)
+        return len(self.dataset) * self.aug_count
 
     def __getitem__(self, index):
-        self.dataset.crop = self.crop
-        self.dataset.scale = torch.randint(
-            low=self.scale_min,
-            high=self.scale_max + 1,
-            size=(1,),
-        )  # int(self.scale)
-        # self.dataset.scale = int(2 * torch.randint(low=1, high=3 + 1, size=(1,)))
+        self.dataset.scale = rng.choice(self.scales)
         data = self.dataset[index]
 
         data["hr_grid"] = torch.from_numpy(data["hr_grid"]).to(torch.float32)
@@ -222,8 +184,6 @@ class NoddyverseWrapper(Dataset):
 
         if "rdn" in self.mode:
             return {"hr": data["hr_grid"], "lr": data["lr_grid"], "gt": data["gt_grid"]}
-
-        # data contains the hr and lr grids at their correct sizes.
 
         hr_coord, hr_val = to_pixel_samples(data["hr_grid"].contiguous())
 
@@ -269,17 +229,6 @@ class RealDataset(Dataset):
         self.gt_patches = np.load(self.root_path, mmap_mode="r")
         self.gt_patch_size = kwargs.get("gt_patch_size")
 
-    def _process(self):  # For compat. with other methods
-        return
-
-    def __getitem__(self, index):
-        idx = index % len(self.gt_patches)
-        self.data = {}
-        self.data["gt_grid"] = self.gt_patches[idx]
-
-        return self.data
-
-
 @register("real_dataset")
 class HRLRReal(RealDataset):
     def __init__(
@@ -288,44 +237,43 @@ class HRLRReal(RealDataset):
         repeat=1,
         **kwargs,
     ):
-        self.sp = {
-            "hr_line_spacing": kwargs.get("hr_line_spacing", 4),
-            "sample_spacing": kwargs.get("sample_spacing", 1),
-            "heading": kwargs.get("heading", "NS"),  # "EW" untested
-            "noise": kwargs.get(
-                "noise", {"gaussian": None, "geology": None, "levelling": None}
-            ),
-        }
         kwargs["model_dir"] = root_path
         self.scale = None  # init params
-        self.inp_size = kwargs.get("input_size", None)  # set in super init?
-        self.crop = None  # set after wrapper
+        # self.crop = None  # set in wrapper
         self.repeat = repeat
+        self.sp = {**kwargs}
         super().__init__(**kwargs)
 
     def __len__(self):
         return len(self.gt_patches) * self.repeat
 
-    def _process(self, index, d=180):
-        # d is pixels in x, y to crop NAN from (if last row/col not sampled)
-        super()._process(index)
+    def __getitem__(self, index):
+        idx = index % len(self.gt_patches)
+        self.data = {}
+        self.data["gt_grid"] = self.gt_patches[idx]
+        return self.data
 
-        hls = self.sp["hr_line_spacing"]  # normally set to 4
-        lls = int(hls * self.scale)  # normally set in range(10)
-        hr_x, hr_y, hr_val = subsample(self.data["gt_grid"], hls, self.sp)
+    def process(self):
+        lls = self.sp["lr_line_spacing"]  # This should be 400
+        hls = lls / self.scale  # scale is 2, 4 or 10. So hls is 200, 100 or 40
+
         lr_x, lr_y, lr_val = subsample(self.data["gt_grid"], lls, self.sp)
+        hr_x, hr_y, hr_val = subsample(self.data["gt_grid"], hls, self.sp)
 
-        # I would like to norm prior gridding, but it breaks value ranges :(
+        if self.sp.get("noise"):
+            lr_val = add_noise(lr_val, self.sp)
+            hr_val = add_noise(hr_val, self.sp)
 
-        # Note - we use scale here as a factor describing how big HR is x LR.
-        # I think this diverges from what my brain normally does.
-        self.data["hr_grid"] = self.norm(grid(hr_x, hr_y, hr_val, ls=hls, d=d))
-        self.data["lr_grid"] = self.norm(grid(lr_x, lr_y, lr_val, ls=lls, d=d))
+        self.data["lr_grid"] = grid(lr_x, lr_y, lr_val, ls=lls)
+        self.data["hr_grid"] = grid(hr_x, hr_y, hr_val, ls=hls)
 
-        if self.crop:
-            self.data["lr_grid"], self.data["hr_grid"] = crop(
-                self.inp_size, self.scale, self.data["lr_grid"], self.data["hr_grid"]
-            )
+        self.data["lr_grid"] = self.norm(self.data["lr_grid"])
+        self.data["hr_grid"] = self.norm(self.data["hr_grid"])
+
+        # if self.crop:
+        #     self.data["lr_grid"], self.data["hr_grid"] = crop(
+        #         self.inp_size, self.scale, self.data["lr_grid"], self.data["hr_grid"]
+        #     )
 
 
 @register("real_wrapper")
@@ -335,18 +283,59 @@ class RealWrapper(Dataset):
         dataset,
         inp_size=None,
         augmentations: dict = {},
-        scale_min=2,
-        scale_max=None,
+        scales=None,
         sample_q=None,
+        mode="lte",
+        **kwargs,
     ):
         self.dataset = dataset
         self.dataset.inp_size = inp_size
-        self.scale = scale_min
-        self.scale_min = scale_min
-        self.scale_max = scale_max or scale_min  # if not scale_max...
+        self.scales = scales
         self.aug = augmentations
         self.sample_q = sample_q  # clip hr samples to same length
+        self.mode = mode
         self.aug_count = 1 + sum(augmentations.values())  # original data included
+
+    def __len__(self):
+        return len(self.dataset) * self.aug_count
+
+    def __getitem__(self, index):
+        self.dataset.scale = rng.choice(self.scales)
+        data = self.dataset[index]
+
+        if self.aug.get("sample"):
+            self._preprocess_augment(data)
+
+        self.dataset.process()  # d = cfg.gt_patch_size
+
+        if self.aug is not None:
+            self._augment(data)
+
+        # data["gt_grid"] = torch.from_numpy(data["gt_grid"].copy()).to(torch.float32)
+        data["hr_grid"] = torch.from_numpy(data["hr_grid"]).to(torch.float32)
+        data["lr_grid"] = torch.from_numpy(data["lr_grid"]).to(torch.float32)
+
+        if "rdn" in self.mode:
+            return {"hr": data["hr_grid"], "lr": data["lr_grid"], "gt": data["gt_grid"]}
+
+        hr_coord, hr_val = to_pixel_samples(data["hr_grid"].contiguous())
+
+        if self.sample_q is not None:
+            sample_lst = np.random.choice(len(hr_coord), self.sample_q, replace=False)
+            hr_coord = hr_coord[sample_lst]
+            hr_val = hr_val[sample_lst]
+
+        hr_cell = torch.ones_like(hr_coord)
+        hr_cell[:, 0] *= 2 / data["hr_grid"].shape[-2]
+        hr_cell[:, 1] *= 2 / data["hr_grid"].shape[-1]
+
+        if "lte" in self.mode:
+            return {
+                "inp": data["lr_grid"],
+                "coord": hr_coord,
+                "cell": hr_cell,
+                "gt": hr_val,
+            }
 
     def _preprocess_augment(self, data):
         """Rotate GT, pre-subsampling / gridding."""
@@ -372,46 +361,6 @@ class RealWrapper(Dataset):
                 data["gt_grid"] = np.rot90(data["gt_grid"], axes=(1, 2))
                 data["hr_grid"] = np.rot90(data["hr_grid"], axes=(1, 2))
                 data["lr_grid"] = np.rot90(data["lr_grid"], axes=(1, 2))
-
-    def __len__(self):
-        return len(self.dataset) * self.aug_count
-
-    def __getitem__(self, index):
-        self.dataset.scale = torch.randint(
-            low=self.scale_min,
-            high=self.scale_max + 1,
-            size=(1,),
-        )  # int(self.scale)
-
-        data = self.dataset[index]
-
-        if self.aug.get("sample"):
-            self._preprocess_augment(data)
-        self.dataset.process()  # d = cfg.gt_patch_size
-        if self.aug is not None:
-            self._augment(data)
-
-        data["gt_grid"] = torch.from_numpy(data["gt_grid"].copy()).to(torch.float32)
-        data["hr_grid"] = torch.from_numpy(data["hr_grid"].copy()).to(torch.float32)
-        data["lr_grid"] = torch.from_numpy(data["lr_grid"].copy()).to(torch.float32)
-
-        hr_coord, hr_val = to_pixel_samples(data["hr_grid"].contiguous())
-
-        if self.sample_q is not None:
-            sample_lst = np.random.choice(len(hr_coord), self.sample_q, replace=False)
-            hr_coord = hr_coord[sample_lst]
-            hr_val = hr_val[sample_lst]
-
-        hr_cell = torch.ones_like(hr_coord)
-        hr_cell[:, 0] *= 2 / data["hr_grid"].shape[-2]
-        hr_cell[:, 1] *= 2 / data["hr_grid"].shape[-1]
-
-        return {
-            "inp": data["lr_grid"],
-            "coord": hr_coord,
-            "cell": hr_cell,
-            "gt": hr_val,
-        }
 
         # _DEBUG = False
         # if _DEBUG:

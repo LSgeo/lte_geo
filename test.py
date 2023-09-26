@@ -47,7 +47,6 @@ def eval_psnr(
     eval_type=None,
     eval_bsize=None,
     window_size=0,
-    scale_max=4,
     fast=False,
     verbose=True,
     rgb_range=1,
@@ -66,12 +65,8 @@ def eval_psnr(
         shave=shave,
     )
 
-    loader.dataset.scale = scale
-    loader.dataset.dataset.scale = scale
-
-    if __name__ == "__main__":
-        loader.dataset.scale_min = scale
-        loader.dataset.scale_max = scale
+    loader.dataset.scales = [scale]
+    # loader.dataset.dataset.scales = [scale]
 
     l1_fn = torch.nn.L1Loss()
     l1_res = utils.Averager()
@@ -80,14 +75,8 @@ def eval_psnr(
 
     pbar = tqdm(loader, leave=False, desc="Eval", dynamic_ncols=True)
     for i, batch in enumerate(pbar):
-        loader.dataset.scale = torch.randint(
-            low=loader.dataset.scale_min,
-            high=loader.dataset.scale_max + 1,
-            size=(1,),
-        )
-
         for k, v in batch.items():
-            batch[k] = v.cuda()
+            batch[k] = v.to("cuda", non_blocking=True)
 
         inp = batch["inp"]
         # SwinIR Evaluation - reflection padding
@@ -118,10 +107,10 @@ def eval_psnr(
                 pred = model(inp, coord, cell)
         else:
             if fast:
-                pred = model(inp, coord, cell * max(scale / scale_max, 1))
+                pred = model(inp, coord, cell * max(scale / scale, 1))
             else:
                 pred = batched_predict(
-                    model, inp, coord, cell * max(scale / scale_max, 1), eval_bsize
+                    model, inp, coord, cell * max(scale / scale, 1), eval_bsize
                 )  # cell clip for extrapolation
 
         # pred.clamp_(0, 1)
