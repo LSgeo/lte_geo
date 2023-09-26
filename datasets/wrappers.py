@@ -45,7 +45,7 @@ class SRImplicitPaired(Dataset):
         if self.augment:
             hflip = random.random() < 0.5
             vflip = random.random() < 0.5
-            dflip = random.random() < 0.5
+            dflip = 0  #random.random() < 0.5
 
             def augment(x):
                 if hflip:

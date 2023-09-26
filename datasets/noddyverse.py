@@ -259,6 +259,7 @@ class NoddyverseWrapper(Dataset):
             high=self.scale_max + 1,
             size=(1,),
         )  # int(self.scale)
+        # self.dataset.scale = int(2 * torch.randint(low=1, high=3 + 1, size=(1,)))
         data = self.dataset[index]
 
         data["hr_grid"] = torch.from_numpy(data["hr_grid"]).to(torch.float32)
@@ -502,6 +503,8 @@ class HRLRReal(RealDataset):
     def __init__(
         self,
         root_path=None,
+        repeat=1,
+
         **kwargs,
     ):
         self.sp = {
@@ -511,6 +514,9 @@ class HRLRReal(RealDataset):
         }
         kwargs["model_dir"] = root_path
         self.scale = None  # init params
+        self.inp_size = kwargs.get("input_size", None)  # set in super init?
+        self.crop = None  # set after wrapper
+        self.repeat = repeat
         super().__init__(root_path, **kwargs)
 
     def _subsample(self, raster, ls):
