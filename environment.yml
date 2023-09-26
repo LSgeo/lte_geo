@@ -1,0 +1,42 @@
+name: lte_noddy
+channels:
+#  - conda-forge
+  - defaults
+dependencies:
+  ## Core
+  - python>=3.10
+  - pytorch::pytorch>=1.12
+  - pytorch::torchvision>=0.11
+  - conda-forge::cudatoolkit=11.6
+  - comet_ml::comet_ml
+  - matplotlib
+  - numpy
+  - verde
+
+  ## LTE
+  - conda-forge::timm
+  - tensorboardx
+  - imageio
+  ## geophys_utils
+  # - numexpr
+  # - affine
+  # - netCDF4
+  # - gdal
+  # - owslib
+  # - scikit-image
+  # - scipy
+  # - cartopy
+  # - shapely
+
+  ## Quality of life
+  - black
+  - colorcet
+  - flake8
+  - jupyter
+  - ipykernel
+  - nb_conda
+  - tqdm
+  - rope
+  - pip
+
+  # install local mlnoddy code using: pip install -e ./MLnoddy
