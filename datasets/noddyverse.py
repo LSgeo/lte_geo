@@ -166,6 +166,7 @@ class NoddyverseWrapper(Dataset):
     ):
         self.dataset = dataset
         self.dataset.inp_size = inp_size
+        self.override_scale = None
         self.scales = scales
         self.aug = augmentations
         self.sample_q = sample_q  # clip hr samples to same length
@@ -177,6 +178,10 @@ class NoddyverseWrapper(Dataset):
 
     def __getitem__(self, index):
         self.dataset.scale = rng.choice(self.scales)
+        if self.override_scale:
+            self.dataset.scale = self.override_scale
+            self.override_scale = None
+
         data = self.dataset[index]
 
         data["hr_grid"] = torch.from_numpy(data["hr_grid"]).to(torch.float32)

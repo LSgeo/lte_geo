@@ -8,7 +8,7 @@ rgb_range: 1  # noddyverse min max clip +-5000
 shave: 6
 model_dir: D:/luke/phd/ch2/ltegeo/save/_train_swinir-lte_geo/
 resume:  # major_fish_9316 # disappointed_neutron_9322 # colossal_south_9912
-only_resume_weights: True
+only_resume_weights: False
 
 # train_dataset:
 #   dataset:
@@ -77,9 +77,10 @@ train_dataset:
     args:
       root_path: 'C:/Users/Public/scratch/sub100m_patch_stack_train.npy'
       repeat: 10 # *= number of augs in wrapper 
-      gt_patch_size: 180
-      hr_line_spacing: 4
-      sample_spacing: 1
+      gt_patch_size: 200
+      input_cell_size: 20 # m
+      lr_line_spacing: 400 # m  # 20 * 20 m == 400 m
+      sample_spacing: 20 # m
       heading: NS
       norm: [-10000, 10000]
   wrapper:
@@ -89,11 +90,10 @@ train_dataset:
         flip: False
         rotate: False # True
         sample: False # True
-      inp_size: 30
-      sample_q: 900
-      scale_min: 2
-      scale_max: 6
-  batch_size: 16
+      inp_size: 25
+      sample_q: 2500
+      scales: [2, 4, 10] 
+  batch_size: 32
 
 val_dataset:
   dataset:
@@ -101,20 +101,20 @@ val_dataset:
     args:
       root_path: "C:/Users/Public/scratch/WA_MAG_20m_MGA2020_sub100m_val_2_offset_0.npy"
       root_path: "C:/Users/Public/scratch/sub80m_patch_stack_val_NSW.npy"
-      
       repeat: 1
-      gt_patch_size: 180
-      hr_line_spacing: 4
-      sample_spacing: 1
+      gt_patch_size: 200
+      input_cell_size: 20
+      lr_line_spacing: 400 # m  # 20 * 20 m == 400 m
+      sample_spacing: 20
       heading: NS
       norm: [-10000, 10000]
   wrapper:
     name: real_wrapper
     args:
-      inp_size: 30
-      sample_q: 900
-      scale_min: 5
-      scale_max: 5
+      crop: False 
+      inp_size: 25
+      sample_q: 2500
+      scales: [2, 4, 10]
   batch_size: 8
 loss_fn: l1
 
@@ -147,4 +147,4 @@ scheduler:
     milestones: [5,6,7,8,9]
     gamma: 0.5
   # one_cycle_lr:
-  #   max_lr: 2.e-3
+  #   max_lr: 3e-4
