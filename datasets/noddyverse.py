@@ -54,7 +54,7 @@ def add_noise(vals, sp):
     return vals
 
 
-def grid(x, y, vals, ls, cs_fac=5, d=2000, inp_cs=20):
+def grid(x, y, vals, ls, cs_fac=5, d=4000, inp_cs=20):
     """Min Curvature grid xyz, with ls/cs_fac cell size.
     Params:
         x, y, vals: subsampled coord/val points
