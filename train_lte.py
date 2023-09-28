@@ -22,6 +22,8 @@ from ch2.ltegeo import models
 from ch2.ltegeo import utils
 from ch2.ltegeo.test import reshape, eval_psnr
 
+plt.ioff()
+
 
 def make_data_loader(spec, tag=""):
     dataset = datasets.make(spec["dataset"])
@@ -128,49 +130,50 @@ def prepare_training(train_loader, val_loader, preview_loader):
 
 
 @torch.no_grad()
+def plt_comet(ims: list, names: list, ax_args: dict, c_exp: Experiment):
+    fig, axes = plt.subplots(1, 3, figsize=(9, 3))
+    for i, ax in enumerate(axes):
+        im = ims[i].detach().cpu().squeeze().numpy()
+        ax.set_title(names[i])
+        cax = ax.imshow(im, cmap=cc.cm.CET_L1, interpolation="nearest", **ax_args)
+        ax.set_yticks(np.linspace(0, im.shape[0], 6))
+        ax.set_xticks(np.linspace(0, im.shape[1], 6))
+        plt.colorbar(cax, ax=ax, orientation="horizontal")
+
+    c_exp.log_figure(figure=plt, figure_name=names[0][:-3] + names[-1][-3:])
+    plt.close()
+
+
 def log_images(loader, model, c_exp: Experiment):
     model.eval()
     scales = [5]
     scales.extend(config["val_dataset"]["wrapper"]["args"]["scales"])
-    for scale in tqdm(scales, leave=False, desc="Generating Previews"):
-        loader.dataset.dataset.scales = [scale]
 
-        for i, batch in enumerate(loader):
-            plot_name = f"sample_{config['plot_samples'][i]:03d}"
+    for si in tqdm(range(len(loader.dataset))):
+        # NOTE we are not using the dataloader! The scale wouldn't change...
 
-            inp = batch["inp"].to("cuda", non_blocking=True)
-            coord = batch["coord"].to("cuda", non_blocking=True)
-            cell = batch["cell"].to("cuda", non_blocking=True)
+        for scale in scales:
+            loader.dataset.dataset.override_scale = scale
+            sample = loader.dataset[si]
+            n = f"sample_{config['plot_samples'][si]:03d}"
+
+            inp = sample["inp"].to("cuda", non_blocking=True).unsqueeze(0)
+            coord = sample["coord"].to("cuda", non_blocking=True).unsqueeze(0)
+            cell = sample["cell"].to("cuda", non_blocking=True).unsqueeze(0)
 
             pred = model(inp, coord, cell)
-            pred, batch = reshape(batch, 0, 0, coord, pred)
+            sample = {"inp": inp, "coord": coord, "cell": cell, "gt": sample["gt"]}
+            pred, sample = reshape(sample, 0, 0, coord, pred)
 
-            inp = batch["inp"].detach().cpu()
-            pred = pred.detach().cpu()
-            gt = batch["gt"].detach().cpu()
+            ax_args = {}
+            ims = [inp, pred, sample["gt"]]
+            names = [
+                n + "_lr",
+                n + f"_sr_{int(scale):02d}x",
+                n + f"_hr_{int(scale):02d}x",
+            ]
 
-            _min = gt.min().item()
-            _max = gt.max().item()
-
-            c_exp.log_image(
-                image_data=pred.squeeze().numpy(),
-                name=plot_name + f"_sr_{int(scale):02d}x",
-                image_minmax=(_min, _max),
-            )
-
-            if c_exp.curr_epoch == 1:
-                c_exp.log_image(
-                    image_data=gt.squeeze().numpy(),
-                    name=plot_name + f"_hr_{int(scale):02d}x",
-                    image_minmax=(_min, _max),
-                )  # HR changes per scale per sample
-
-            if scale == 5 and c_exp.curr_epoch == 1:
-                c_exp.log_image(
-                    image_data=inp.squeeze().numpy(),
-                    name=plot_name + "_lr",
-                    image_minmax=(_min, _max),
-                )  # LR changes per sample, but constant per scale
+            plt_comet(ims, names, ax_args, c_exp)
 
 
 def train_with_fake_epochs(
@@ -414,7 +417,8 @@ def main(config_, save_path):
     if n_gpus > 1:
         model = nn.parallel.DataParallel(model)
 
-    tags = ["liif"]
+    tags = []
+    tags.extend([config.get("model")["name"]])
     tags.extend(["amp_scaler"] if config.get("use_amp_scaler") else [])
     tags.extend(["amp_autocast"] if config.get("use_amp_autocast") else [])
     tags.extend(["resume", config.get("resume")] if config.get("resume") else [])
@@ -425,7 +429,7 @@ def main(config_, save_path):
     )
     tags.extend(
         ["aug"]
-        if any(config["train_dataset"]["wrapper"]["args"].get("augmentations"))
+        if any(config["train_dataset"]["wrapper"]["args"].get("augmentations").values())
         else []
     )  # TODO FIX - returns true even if all augs are false
     scale_tags = [f"{s}x" for s in config["train_dataset"]["wrapper"]["args"]["scales"]]
