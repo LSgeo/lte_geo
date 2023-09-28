@@ -5,7 +5,7 @@ num_workers: 14 # ~6+ on 10900KF / 3090
 eval_type: noddyverse-5
 plot_samples: [209, 221, 232, 237, 244, 248, 256, 253, 253, 254]
 rgb_range: 1  # noddyverse min max clip +-5000
-shave: 6
+shave: 15
 model_dir: D:/luke/phd/ch2/ltegeo/save/_train_swinir-lte_geo/
 resume: # major_fish_9316 # disappointed_neutron_9322 # colossal_south_9912
 only_resume_weights: False

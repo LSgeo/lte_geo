@@ -125,7 +125,9 @@ def prepare_training(train_loader, val_loader, preview_loader):
             )
         elif "one_cycle_lr" in config.get("scheduler"):
             lr_scheduler = OneCycleLR(
-                optimizer, **config.get("scheduler")["one_cycle_lr"]
+                optimizer,
+                max_lr=float(config.get("scheduler")["one_cycle_lr"]["max_lr"]),
+                total_steps=len(train_loader),
             )
         else:
             raise NotImplementedError("Misconfigured Scheduler")
@@ -146,7 +148,7 @@ def plt_comet(ims: list, names: list, ax_args: dict, c_exp: Experiment):
         ax.set_xticks(np.linspace(0, im.shape[1], 6))
         plt.colorbar(cax, ax=ax, orientation="horizontal")
 
-    c_exp.log_figure(figure=plt, figure_name=names[0][:-3] + names[-1][-3:])
+    c_exp.log_figure(figure=plt, figure_name=names[0][:-3] + names[-1][-4:])
     plt.close()
 
 
@@ -159,9 +161,9 @@ def log_images(loader, model, c_exp: Experiment):
         # NOTE we are not using the dataloader! The scale wouldn't change...
 
         for scale in scales:
+            n = f"sample_{config['plot_samples'][si]:03d}"
             loader.dataset.dataset.override_scale = scale
             sample = loader.dataset[si]
-            n = f"sample_{config['plot_samples'][si]:03d}"
 
             inp = sample["inp"].to("cuda", non_blocking=True).unsqueeze(0)
             coord = sample["coord"].to("cuda", non_blocking=True).unsqueeze(0)
@@ -497,8 +499,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config",
-        default="ch2/ltegeo/configs/train_swinir-lte_geo_synthetic.yaml"
-        # "--config", default="ch2/ltegeo/configs/train_swinir-lte_geo_real.yaml"
+        # default="ch2/ltegeo/configs/train_swinir-lte_geo_synthetic.yaml"
+        default="ch2/ltegeo/configs/train_swinir-lte_geo_real.yaml",
     )
     parser.add_argument("--name", default=None)
     parser.add_argument("--tag", default=None)

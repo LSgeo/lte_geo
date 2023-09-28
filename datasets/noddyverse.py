@@ -28,7 +28,7 @@ def subsample(raster, ls, sp):
     )
     x = x[::ss, ::ls]
     y = y[::ss, ::ls]
-    vals = raster.numpy()[:, ::ss, ::ls].squeeze()  # shape for gridding
+    vals = raster[:, ::ss, ::ls].squeeze()  # shape for gridding
 
     return x, y, vals
 
@@ -234,6 +234,7 @@ class RealDataset(Dataset):
         self.gt_patches = np.load(self.root_path, mmap_mode="r")
         self.gt_patch_size = kwargs.get("gt_patch_size")
 
+
 @register("real_dataset")
 class HRLRReal(RealDataset):
     def __init__(
@@ -247,7 +248,7 @@ class HRLRReal(RealDataset):
         # self.crop = None  # set in wrapper
         self.repeat = repeat
         self.sp = {**kwargs}
-        super().__init__(**kwargs)
+        super().__init__(root_path, **kwargs)
 
     def __len__(self):
         return len(self.gt_patches) * self.repeat
@@ -255,7 +256,7 @@ class HRLRReal(RealDataset):
     def __getitem__(self, index):
         idx = index % len(self.gt_patches)
         self.data = {}
-        self.data["gt_grid"] = self.gt_patches[idx]
+        self.data["gt_grid"] = torch.from_numpy(self.gt_patches[idx]).to(torch.float32)
         return self.data
 
     def process(self):
@@ -296,6 +297,7 @@ class RealWrapper(Dataset):
         self.dataset = dataset
         self.dataset.inp_size = inp_size
         self.scales = scales
+        self.override_scale = None
         self.aug = augmentations
         self.sample_q = sample_q  # clip hr samples to same length
         self.mode = mode
@@ -306,6 +308,10 @@ class RealWrapper(Dataset):
 
     def __getitem__(self, index):
         self.dataset.scale = rng.choice(self.scales)
+        if self.override_scale:
+            self.dataset.scale = self.override_scale
+            self.override_scale = None
+
         data = self.dataset[index]
 
         if self.aug.get("sample"):
@@ -317,8 +323,8 @@ class RealWrapper(Dataset):
             self._augment(data)
 
         # data["gt_grid"] = torch.from_numpy(data["gt_grid"].copy()).to(torch.float32)
-        data["hr_grid"] = torch.from_numpy(data["hr_grid"]).to(torch.float32)
-        data["lr_grid"] = torch.from_numpy(data["lr_grid"]).to(torch.float32)
+        data["hr_grid"] = torch.from_numpy(data["hr_grid"].copy()).to(torch.float32)
+        data["lr_grid"] = torch.from_numpy(data["lr_grid"].copy()).to(torch.float32)
 
         if "rdn" in self.mode:
             return {"hr": data["hr_grid"], "lr": data["lr_grid"], "gt": data["gt_grid"]}

@@ -125,7 +125,9 @@ def to_pixel_samples(img):
 
 
 def calc_psnr(sr, hr, dataset=None, scale=1, rgb_range=1, shave=None):
-    return 20 * torch.log10(rgb_range / torch.sqrt(torch.mean((sr - hr) ** 2)))
+    shave = int((shave // 100) * hr.shape[-1])
+    diff = (sr - hr)[..., shave:-shave, shave:-shave]
+    return 20 * torch.log10(rgb_range / torch.sqrt(torch.mean(diff ** 2)))
     diff = (sr - hr) / rgb_range
     if dataset is not None:
         if dataset == "benchmark":
