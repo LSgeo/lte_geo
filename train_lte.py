@@ -8,12 +8,14 @@ from pathlib import Path
 import yaml
 
 from comet_ml import Experiment
+import colorcet as cc
+import matplotlib.pyplot as plt
 import numpy as np
 import piq
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Subset
-from torch.optim.lr_scheduler import MultiStepLR
+from torch.optim.lr_scheduler import MultiStepLR, OneCycleLR
 from torch.cuda.amp import autocast, GradScaler
 from tqdm import tqdm
 
@@ -120,6 +122,10 @@ def prepare_training(train_loader, val_loader, preview_loader):
         if "multi_step_lr" in config.get("scheduler"):
             lr_scheduler = MultiStepLR(
                 optimizer, **config.get("scheduler")["multi_step_lr"]
+            )
+        elif "one_cycle_lr" in config.get("scheduler"):
+            lr_scheduler = OneCycleLR(
+                optimizer, **config.get("scheduler")["one_cycle_lr"]
             )
         else:
             raise NotImplementedError("Misconfigured Scheduler")
