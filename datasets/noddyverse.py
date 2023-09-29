@@ -26,9 +26,17 @@ def subsample(raster, ls, sp):
         np.arange(raster.shape[-2]),
         indexing="xy",
     )
-    x = x[::ss, ::ls]
-    y = y[::ss, ::ls]
-    vals = raster[:, ::ss, ::ls].squeeze()  # shape for gridding
+    x1 = x[::ss, ::ls]
+    x2 = x[::ss, -1]
+    x = np.concatenate((x1, x2[:, None]), axis=1)
+
+    y1 = y[::ss, ::ls]
+    y2 = y[::ss, -1]
+    y = np.concatenate((y1, y2[:, None]), axis=1)
+
+    v1 = raster[:, ::ss, ::ls].squeeze()  # shape for gridding
+    v2 = raster[:, ::ss, -1].squeeze()
+    vals = np.concatenate((v1, v2[:, None]), axis=1)
 
     return x, y, vals
 
