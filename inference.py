@@ -26,12 +26,6 @@ import tifffile
 from .datasets.noddyverse import HRLRNoddyverse, NoddyverseWrapper
 from .datasets.noddyverse import load_naprstek_synthetic as load_naprstek
 
-mpl.rcParams["font.size"] = 8.0
-mpl.rcParams["figure.dpi"] = 600
-# mpl.rcParams["figure.figsize"] = (4.3, 3.3)
-mpl.rcParams["figure.constrained_layout.use"] = True
-mpl.rcParams["image.origin"] = "lower"
-
 
 def load_model(cfg, device="cuda", best_or_last="last"):
     model_dir = Path(cfg["model_dir"])
@@ -60,7 +54,7 @@ def main():
     plot_samples = []
     plot_samples.extend(cfg["plot_samples"][0])
     plot_samples.extend(
-        list(range(cfg["plot_samples"][1][0], cfg["plot_samples"][1][1]))
+        list(range(cfg["plot_samples"][1][0], cfg["plot_samples"][1][-1]))
     )
 
     if cfg["limit_to_plots"]:
@@ -348,7 +342,9 @@ def plot_gt(ax: plt.Axes, gt: np.ndarray, args: dict, scale: int = 1):
     TODO: Indicate Cropping of GT!!! Extent is currently WRONG
     """
     mask = np.zeros_like(gt)
-    mask[:: int(args["sample_spacing"]), :: int(args["hr_line_spacing"] * scale)] = 1
+    mask[
+        :: int(args["sample_spacing"]) // 20, :: int(args["lr_line_spacing"]) // 20
+    ] = 1
     cgry = ax.imshow(
         gt,
         cmap=cc.cm.CET_L1,
@@ -366,18 +362,14 @@ def plot_gt(ax: plt.Axes, gt: np.ndarray, args: dict, scale: int = 1):
     )
     # plt.colorbar(mappable=cgry, ax=ax, location="bottom", label="Unsampled TMI (nT)")
     # plt.colorbar(mappable=cclr, ax=ax, location="bottom", label="Sampled TMI (nT)")
+    ax.set_ylabel("y (m)")
     ax.set_ylim(0, gt.shape[0] * 20)
     ax.set_xlabel("x (m)")
-    ax.set_ylabel("y (m)")
-    ax.set_xticks(range(0, gt.shape[1] * 20 + 1, args["hr_line_spacing"] * scale * 20))
-    ax.xaxis.set_major_locator(
-        mpl.ticker.MultipleLocator(20 * 4 * scale * args["hr_line_spacing"])
-    )
+    ax.set_xticks(range(0, gt.shape[1] + 1, args["lr_line_spacing"]))
+    ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(1 * args["lr_line_spacing"]))
     ax.xaxis.set_major_formatter("{x:.0f}")
-    ax.xaxis.set_minor_locator(
-        mpl.ticker.MultipleLocator(5 * 4 * scale * args["hr_line_spacing"])
-    )
-    ax.tick_params(axis="x", labelrotation=90)
+    ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(args["lr_line_spacing"]))
+    ax.tick_params(axis="x", labelrotation=270)
     # axgt.vlines(range(0, gt.shape[1], args["hr_line_spacing"] * scale),0,gt.shape[0],color="r",linewidth=1,)  # hr_line spacing * scale !!!
 
     return cclr

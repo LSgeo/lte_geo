@@ -1,47 +1,51 @@
-model_dir: /mnt/win_data/luke/phd/ch2/ltegeo/save/_train_swinir-lte_geo
-model_name: resident_plate_9730
+model_dir: D:/luke/phd/ch2/ltegeo/save/_train_swinir-lte_geo
+model_name:  blushing_landing
 # major_fish  #joint_fly # unwilling_cocoa # parliamentary_skyscraper ###holy_molding # beige_ottoman  #average_aerator # artificial_observatory #beige_ottoman
 # range_model_names: [silky_pie, annoyed_degree, eligible_toast, olympic_mackerel, major_fish, disappointed_neutron]
 # range_model_scales: [2,3,4,5,6,9]
-inference_output_dir: /mnt/win_data/luke/phd/ch2/ltegeo/inference/range_test # blank or Custom path
+inference_output_dir: D:/luke/phd/ch2/ltegeo/inference/paper2 # blank or Custom path
 num_workers: 0
 rgb_range: 1 
+shave_factor: 15
 eval_bsize: 360_000 #360_000 # Reduce RAM usage? num points per model call
 limit_to_plots: True  # subset dataset to "interesting" plots, OR don't plot and calc metrics
-plot_samples: [[17, 20, 70, 91, 143, 185, 199, 200], [0, 1]]
+plot_samples: [[17, 20, 70, 91, 143, 185, 199, 200, 224], [0, 1]]
 custom_grids: False
 
-do_real_inference: True
-real_inference_path: "/mnt/win_data/luke/data_source/p1260_test_area/p1260_1.ers"
-# real_inference_path: /mnt/win_data/luke/data_source/p1260_test_area/P1260-grid-tmi.ers
+do_real_inference: False
+real_inference_path: "D:/luke/data_source/p1260_test_area/p1260_1.ers"
+# real_inference_path: D:/luke/data_source/p1260_test_area/P1260-grid-tmi.ers
 # real_inference_path: U:/RTIO_Grids_1A/AngeloNorth_TMI_40m.ers 
-# real_inference_path: /mnt/win_data/luke/data_source/P1134/P1134-grid-tmi.ers 
-real_inference_scale: 6
-real_inference_size: 45 # trained inp_size
+# real_inference_path: D:/luke/data_source/P1134/P1134-grid-tmi.ers 
+real_inference_scale: 4
+real_inference_size: 25 # trained inp_size
 
 test_dataset:
   batch_size: 1
   dataset:
-    name: noddyverse_dataset
+    name: real_dataset
     args:
-      root_path: /mnt/win_c/Users/Public/scratch/Noddy_1M
-      noddylist: /mnt/win_c/Users/Public/scratch/Noddy_10k/models_10k.csv
+      root_path: "C:/Users/Public/scratch/WA_MAG_20m_MGA2020_sub100m_val_2_offset_0.npy"
+      # root_path: C:/Users/Public/scratch/Noddy_1M
+      noddylist: C:/Users/Public/scratch/Noddy_10k/models_10k.csv
       blocklist:
       events: 
-      hr_line_spacing: 4 # 4, so gridded shape is same as gt.
-      sample_spacing: 1
+      input_cell_size: 20
+      lr_line_spacing: 320 # 4, so gridded shape is same as gt.
+      sample_spacing: 20
       heading: NS
       load_magnetics: True # Norm [+-5000]
       load_gravity: False # Norm [400,500]
-      norm: # [-10000, 10000]
-      noise: # 3 sources of noise, decimal % of norm range
-        gaussian: 0 #.1 #10  #  noise applied to all cells
-        levelling: 0 #.02 #02  # noise applied to sampled columns in array (sample lines)
-        # geology: 0.05 #  gradient applied to grid. Not implemented.
+      norm: [-10000, 10000]
+      # noise: # 3 sources of noise, decimal % of norm range
+      #   gaussian: 0 #.1 #10  #  noise applied to all cells
+      #   levelling: 0 #.02 #02  # noise applied to sampled columns in array (sample lines)
+      #   # geology: 0.05 #  gradient applied to grid. Not implemented.
   wrapper:
-    name: noddyverse_wrapper
+    name: real_wrapper
     args:
       crop: False
-      inp_size: 45
+      inp_size: 25
       scale_min: 4
       scale_max: 4
+      scales: [4]
