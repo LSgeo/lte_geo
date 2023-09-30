@@ -37,7 +37,7 @@ def make_data_loader(spec, tag=""):
         dataset.dataset.preview_mode = True
         dataset.dataset.sample_q = None  # Preview full extent
         bs = 1
-        num_workers = 2
+        num_workers = 0
         log(f"  Preview Scales: {dataset.dataset.scales}")
     else:
         bs = spec["batch_size"]
@@ -174,6 +174,7 @@ def log_images(loader, model, c_exp: Experiment):
             pred, sample = reshape(sample, 0, 0, coord, pred)
 
             ax_args = {}
+            # dict(vmin=sample["gt"].min().item(), vmax=sample["gt"].max().item())
             ims = [inp, pred, sample["gt"]]
             names = [
                 n + "_lr",
@@ -222,7 +223,7 @@ def train_with_fake_epochs(
         # writer.add_scalars('loss', {'train': train_loss_itm}, epoch)
 
         writer.add_scalar("lr", optimizer.param_groups[0]["lr"], curr_epoch)
-        if "multi_step_lr" in config.get("scheduler"):
+        if config.get("scheduler") in ["multi_step_lr", "one_cycle_lr"]:
             c_exp.log_metric("LR", lr_scheduler.get_last_lr()[0], epoch=curr_epoch)
             lr_scheduler.step()
 
@@ -298,20 +299,22 @@ def train_with_fake_epochs(
     train_loss = utils.Averager()
     metric_fn = utils.calc_psnr
     l1_loss_fn = nn.L1Loss()
-    if "fsim" in config["loss_fn"]:
-        iqa_loss_fn = piq.FSIMLoss(data_range=config["rgb_range"], chromatic=False)
-    elif "ssim" in config["loss_fn"]:
-        iqa_loss_fn = piq.SSIMLoss(data_range=config["rgb_range"])
-    elif "haarpsi" in config["loss_fn"]:
-        iqa_loss_fn = piq.HaarPSILoss(
-            data_range=config["rgb_range"],
-            c=20,  # selected for higher "noise" task performance
-            alpha=6,  # selected for higher "noise" task performance
-        )
-    elif "l1" in config["loss_fn"]:
-        pass
-    else:
-        raise NotImplementedError(f'{config["loss_fn"]} unsupported')
+    if True:  # "fsim" in config["loss_fn"]:
+        fsim_loss_fn = (
+            piq.fsim
+        )  # FSIM_Loss(data_range=config["rgb_range"], chromatic=False)
+    if True:  # "ssim" in config["loss_fn"]:
+        ssim_loss_fn = piq.ssim  # SSIM_Loss(data_range=config["rgb_range"])
+    # elif "haarpsi" in config["loss_fn"]:
+    #     iqa_loss_fn = piq.HaarPSILoss(
+    #         data_range=config["rgb_range"],
+    #         c=20,  # selected for higher "noise" task performance
+    #         alpha=6,  # selected for higher "noise" task performance
+    #     )
+    # elif "l1" in config["loss_fn"]:
+    #     pass
+    # else:
+    #     raise NotImplementedError(f'{config["loss_fn"]} unsupported')
 
     for iteration, batch in enumerate(
         tqdm(train_loader, leave=True, desc="Train iteration", dynamic_ncols=True),
@@ -327,62 +330,58 @@ def train_with_fake_epochs(
 
         with autocast(enabled=config.get("use_amp_autocast", False)):
             pred = model(batch["inp"], batch["coord"], batch["cell"])
-            l1_loss = l1_loss_fn(pred, batch["gt"])
 
-            # if torch.isnan(pred).any():
-            #     log(f"\npred had nans, skipped iter {iteration} ")
-            #     continue
-            # if pred.min() < -0 or pred.max() > 1 or torch.isnan(pred).any():
-            #     log(f"Value of {pred.min()=} {pred.max()=} out of range")
+            # Reshape so we can crop out the edges
+            pred, batch = reshape(batch, 0, 0, batch["coord"], pred)
+            shave = config.get("shave")
+            shave = int((shave / 100) * batch["gt"].shape[-1])
+            pred = pred[..., shave:-shave, shave:-shave]
+            gt = batch["gt"][..., shave:-shave, shave:-shave]
+            l1_loss = l1_loss_fn(pred, gt)
             psnr = metric_fn(
                 pred,
-                batch["gt"],
+                gt,
                 rgb_range=config.get("rgb_range"),
                 shave=config.get("shave"),
             )
+            # if pred.min() < -0 or pred.max() > 1:
+            #     log(f"Value of {pred.min()=} {pred.max()=} out of range")
+            pred.clamp_(0.0, 1.0)
+            gt.clamp_(0.0, 1.0)
+            fsim_loss = fsim_loss_fn(pred, gt, chromatic=False).item()
+            ssim_loss = ssim_loss_fn(pred, gt).item()
+            c_exp.log_metric("FSIM Train", fsim_loss, step=iteration)
+            c_exp.log_metric("SSIM Train", ssim_loss, step=iteration)
+            # iqa_loss = iqa_loss_fn(pred, gt)
+            # loss = iqa_loss
+            # iqa_loss_item = iqa_loss.item()
+            # else:
+            #     raise ValueError(f"Loss function not supported, {epoch=}")
 
-            if "l1" in config["loss_fn"]:
-                loss = l1_loss
-            elif (
-                "fsim" in config["loss_fn"]
-                or "haarpsi" in config["loss_fn"]
-                or "ssim" in config["loss_fn"]
-            ):
-                pred, batch = reshape(batch, 0, 0, batch["coord"], pred)
-                # if pred.min() < -0 or pred.max() > 1:
-                #     log(f"Value of {pred.min()=} {pred.max()=} out of range")
-                pred.clamp_(0.0, 1.0)
-                batch["gt"].clamp_(0.0, 1.0)
-                iqa_loss = iqa_loss_fn(pred, batch["gt"])
-                loss = iqa_loss
-                iqa_loss_item = iqa_loss.item()
-            else:
-                raise ValueError(f"Loss function not supported, {epoch=}")
-
-        scaler.scale(loss).backward()
+        scaler.scale(l1_loss).backward()
         scaler.step(optimizer)  # .step()
         scaler.update()
         optimizer.zero_grad(set_to_none=True)
 
         l1_loss_item = l1_loss.item()
         psnr_item = psnr.item()
-        train_loss.add(loss.item())
+        train_loss.add(l1_loss_item)  # loss.item())
 
         writer.add_scalars("L1 loss Train", {"train": l1_loss_item}, iteration)
         writer.add_scalars("PSNR", {"train": psnr_item}, iteration)
         c_exp.log_metric("L1 loss Train", l1_loss_item, step=iteration)
         c_exp.log_metric("PSNR Train", psnr_item, step=iteration)
-        if (
-            "fsim" in config["loss_fn"]
-            or "haarpsi" in config["loss_fn"]
-            or "ssim" in config["loss_fn"]
-        ):
-            writer.add_scalars(
-                f"{config['loss_fn']} loss Train", {"train": iqa_loss_item}, iteration
-            )
-            c_exp.log_metric(
-                f"{config['loss_fn']} loss Train", iqa_loss_item, step=iteration
-            )
+        # if (
+        #     "fsim" in config["loss_fn"]
+        #     or "haarpsi" in config["loss_fn"]
+        #     or "ssim" in config["loss_fn"]
+        # ):
+        #     writer.add_scalars(
+        #         f"{config['loss_fn']} loss Train", {"train": iqa_loss_item}, iteration
+        #     )
+        #     c_exp.log_metric(
+        #         f"{config['loss_fn']} loss Train", iqa_loss_item, step=iteration
+        #     )
 
         if iteration % iter_per_epoch == 0:
             max_val_v = fake_epoch_end(epoch, train_loss.item(), max_val_v)
