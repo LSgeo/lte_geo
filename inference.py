@@ -339,7 +339,6 @@ def plot_hist(ax: plt.Axes, comparisons: list, suffix: str = "", xrange: int = N
 
 def plot_gt(ax: plt.Axes, gt: np.ndarray, args: dict, scale: int = 1):
     """Plot ground truth grid with indication of line sampled data
-    TODO: Indicate Cropping of GT!!! Extent is currently WRONG
     """
     mask = np.zeros_like(gt)
     mask[

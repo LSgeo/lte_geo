@@ -1,7 +1,7 @@
 use_comet: True
 use_amp_scaler: False  # Currently causes NaN
 use_amp_autocast: False  # Seems to make results bad lol
-num_workers: 14 # ~6+ on 10900KF / 3090
+num_workers: 8 # ~6+ on 10900KF / 3090
 eval_type: noddyverse-5
 plot_samples: [209, 221, 232, 237, 244, 248, 256, 253, 253, 254]
 rgb_range: 1  # noddyverse min max clip +-5000
@@ -21,10 +21,11 @@ train_dataset:
       blocklist: "C:/Users/Public/scratch/Noddy_10k/models_10k.csv"  # Don't allow use of models in the 10k test set.
       events:
       # hr_line_spacing: lls / scale # 4  # array coords. 1 == 20 m Noddyverse
+      gt_patch_size: 200
       input_cell_size: 20 # m
       lr_line_spacing: 400 # m  # 20 * 20 m == 400 m
       sample_spacing: 20 # m
-      # cs_fac: 4  # Hardcoded to 4
+      # cs_fac: 5  # Hardcoded to 5
       heading: NS
       norm: [-10000, 10000]
       load_magnetics: True
@@ -36,11 +37,10 @@ train_dataset:
         flip: False
         rotate: False
         sample: False
-      crop: False # Don't use me.
-      inp_size: 25
+      inp_size: 50
       sample_q: 2500 # (inp_size * min(scale))**2
-      scales: [2, 4, 10]  # only support 2, 4, 10.
-  batch_size: 32 #1 #4
+      scales: [2, 4, 5]  # only support 2, 4, 10.
+  batch_size: 16
 
 val_dataset:
   dataset:
@@ -51,6 +51,7 @@ val_dataset:
       use_dset_slice: [-1001, -1]  # [n:m] slice notation, can be negative
       noddylist: "C:/Users/Public/scratch/Noddy_1M/models.csv"
       blocklist: "C:/Users/Public/scratch/Noddy_10k/models_10k.csv" 
+      gt_patch_size: 200
       input_cell_size: 20
       lr_line_spacing: 400 # m  # 20 * 20 m == 400 m
       sample_spacing: 20
@@ -63,10 +64,9 @@ val_dataset:
   wrapper:
     name: noddyverse_wrapper
     args:
-      crop: False 
-      inp_size: 25
-      sample_q: 2500
-      scales: [2, 4, 10]
+      inp_size: 50
+      sample_q: # sample_q destroys image structure, so don't use in Val
+      scales: [2, 4, 5]
   batch_size: 8
 loss_fn: l1
 
@@ -89,14 +89,14 @@ model:
 optimizer:
   name: adam
   args:
-    lr: 1.e-4
+    lr: 3.e-4
 
 epoch_max: 10
 epoch_val: 1
 epoch_save:
 scheduler:
-  multi_step_lr:
-    milestones: [5,6,7,8,9]
-    gamma: 0.5
-  # one_cycle_lr:
-  #   max_lr: 3e-4
+  # multi_step_lr:
+  #   milestones: [5,6,7,8,9]
+  #   gamma: 0.5
+  one_cycle_lr:
+    max_lr: 3.e-4

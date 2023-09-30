@@ -69,7 +69,6 @@ def grid(x, y, vals, ls, cs_fac=5, d=3980, inp_cs=20):
         ls: line spacing of data
         cs_fac: 4 or 5 as rule of thumb
         d: adjustable crop factor, spatial units to match ls
-
     """
     w, e, s, n = np.array([0, d, 0, d], dtype=np.float32)
     cs = ls / cs_fac  # Cell size is e.g. 1/4 line spacing
