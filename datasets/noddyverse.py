@@ -62,7 +62,7 @@ def add_noise(vals, sp):
     return vals
 
 
-def grid(x, y, vals, ls, cs_fac=5, d=4000, inp_cs=20):
+def grid(x, y, vals, ls, cs_fac=5, d=3980, inp_cs=20):
     """Min Curvature grid xyz, with ls/cs_fac cell size.
     Params:
         x, y, vals: subsampled coord/val points
@@ -73,15 +73,13 @@ def grid(x, y, vals, ls, cs_fac=5, d=4000, inp_cs=20):
     """
     w, e, s, n = np.array([0, d, 0, d], dtype=np.float32)
     cs = ls / cs_fac  # Cell size is e.g. 1/4 line spacing
+    shape = int((d + inp_cs) / cs)
     gridder = vd.Cubic().fit(coordinates=(x * inp_cs, y * inp_cs), data=vals)
-    coordinates = vd.grid_coordinates((w, e, s, n), spacing=cs, pixel_register=True)
+    coordinates = vd.grid_coordinates(
+        (w, e, s, n), shape=(shape, shape), pixel_register=True
+    )
     grid = gridder.grid(data_names="forward", coordinates=coordinates)
     grid = grid.get("forward").values.astype(np.float32)
-
-    if False:
-        import matplotlib.pyplot as plt
-
-        plt.imshow(grid)
 
     return np.expand_dims(grid, 0)  # add channel dimension
 

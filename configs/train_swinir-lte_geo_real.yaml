@@ -90,7 +90,7 @@ train_dataset:
         sample: True  # Rotation of grid prior sampling
         flip: True
         rotate: False  # Don't use - changes direction of low resolution
-      inp_size: 25
+      inp_size: 50
       sample_q: 2500
       scales: [2, 4, 10] 
   batch_size: 32
@@ -112,7 +112,7 @@ val_dataset:
     name: real_wrapper
     args:
       crop: False 
-      inp_size: 25
+      inp_size: 50
       sample_q: 2500
       scales: [2, 4, 10]
   batch_size: 8
