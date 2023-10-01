@@ -1,7 +1,7 @@
 use_comet: True
 use_amp_scaler: False  # Currently causes NaN
 use_amp_autocast: False  # Seems to make results bad lol
-num_workers: 8 # ~6+ on 10900KF / 3090
+num_workers: 10 # ~6+ on 10900KF / 3090
 eval_type: noddyverse-5
 plot_samples: [209, 221, 232, 237, 244, 248, 256, 253, 253, 254]
 rgb_range: 1  # noddyverse min max clip +-5000
@@ -15,7 +15,7 @@ train_dataset:
     name: noddyverse_dataset
     args:
       repeat: 1  # number of times to iterate entire dataset - i.e. epochs (but of the below slice)
-      use_dset_slice: [0, 500_000]  # restrict dataset to [n:m]  # ~ 1 hour / 100k samples
+      use_dset_slice: [0, 960_000]  # restrict dataset to [n:m]  # ~ 1 hour / 100k samples
       root_path: "C:/Users/Public/scratch/Noddy_1M" #C:/Users/Public/scratch/noddyverse/train
       noddylist: "C:/Users/Public/scratch/Noddy_1M/models.csv"
       blocklist: "C:/Users/Public/scratch/Noddy_10k/models_10k.csv"  # Don't allow use of models in the 10k test set.
@@ -37,9 +37,9 @@ train_dataset:
         flip: False
         rotate: False
         sample: False
-      inp_size: 50
-      sample_q: 2500 # (inp_size * min(scale))**2
-      scales: [2, 4, 5]  # only support 2, 4, 10.
+      inp_size: 48 # Currently hardcoded at 48 due to bug
+      sample_q: 2304 # (inp_size * min(scale))**2
+      scales: [4] # [2, 4, 5]  # only support 2, 4, 10.
   batch_size: 16
 
 val_dataset:
@@ -64,14 +64,14 @@ val_dataset:
   wrapper:
     name: noddyverse_wrapper
     args:
-      inp_size: 50
+      inp_size: 48 # Currently hardcoded at 48 due to bug
       sample_q: # sample_q destroys image structure, so don't use in Val
-      scales: [2, 4, 5]
+      scales: [4] #[2, 4, 5]
   batch_size: 8
 loss_fn: l1
 
 model:
-  name: liif
+  name: lte
   args:
     encoder_spec:
       name: swinir
@@ -83,7 +83,7 @@ model:
       name: mlp
       args:
         out_dim: 1
-        hidden_list: [256, 256, 256, 256]
+        hidden_list: [256, 256, 256]
     # hidden_dim: 256
 
 optimizer:

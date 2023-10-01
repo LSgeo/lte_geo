@@ -62,7 +62,7 @@ def add_noise(vals, sp):
     return vals
 
 
-def grid(x, y, vals, ls, cs_fac=5, d=3980, inp_cs=20):
+def grid(x, y, vals, ls, cs_fac=5, d=3980, inp_cs=20, inp_size=None, scale=None):
     """Min Curvature grid xyz, with ls/cs_fac cell size.
     Params:
         x, y, vals: subsampled coord/val points
@@ -71,8 +71,9 @@ def grid(x, y, vals, ls, cs_fac=5, d=3980, inp_cs=20):
         d: adjustable crop factor, spatial units to match ls
     """
     w, e, s, n = np.array([0, d, 0, d], dtype=np.float32)
-    cs = ls / cs_fac  # Cell size is e.g. 1/4 line spacing
-    shape = int((d + inp_cs) / cs)
+    cs = ls / cs_fac  # Cell size is e.g. 1/5 line spacing
+    # shape = int((d + inp_cs) / cs)
+    shape = int(inp_size * scale)
     gridder = vd.Cubic().fit(coordinates=(x * inp_cs, y * inp_cs), data=vals)
     coordinates = vd.grid_coordinates(
         (w, e, s, n), shape=(shape, shape), pixel_register=True
@@ -113,12 +114,13 @@ class HRLRNoddyverse(NoddyDataset):
     def __init__(
         self,
         root_path=None,
+        inp_size=48,
         repeat=1,
         **kwargs,
     ):
         kwargs["model_dir"] = root_path
         self.scale = None  # Set in Wrapper
-        # self.crop = None  # Set in Wrapper
+        self.inp_size = inp_size
         self.repeat = repeat
         self.sp = {**kwargs}
         super().__init__(**kwargs)
@@ -145,8 +147,8 @@ class HRLRNoddyverse(NoddyDataset):
             lr_val = add_noise(lr_val, self.sp)
             hr_val = add_noise(hr_val, self.sp)
 
-        self.data["lr_grid"] = grid(lr_x, lr_y, lr_val, ls=lls)
-        self.data["hr_grid"] = grid(hr_x, hr_y, hr_val, ls=hls)
+        self.data["lr_grid"] = grid(lr_x, lr_y, lr_val, ls=lls, inp_size=self.inp_size, scale=1)
+        self.data["hr_grid"] = grid(hr_x, hr_y, hr_val, ls=hls, inp_size=self.inp_size, scale=self.scale)
 
         self.data["lr_grid"] = self.norm(self.data["lr_grid"])
         self.data["hr_grid"] = self.norm(self.data["hr_grid"])
@@ -162,7 +164,6 @@ class NoddyverseWrapper(Dataset):
     def __init__(
         self,
         dataset,
-        inp_size=None,
         augmentations: dict = {},
         scales=None,
         sample_q=None,
@@ -170,7 +171,6 @@ class NoddyverseWrapper(Dataset):
         **kwargs,
     ):
         self.dataset = dataset
-        self.dataset.inp_size = inp_size
         self.override_scale = None
         self.scales = scales
         self.aug = augmentations
@@ -249,8 +249,8 @@ class HRLRReal(RealDataset):
         **kwargs,
     ):
         kwargs["model_dir"] = root_path
+        self.inp_size = None  # Set in Wrapper
         self.scale = None  # init params
-        # self.crop = None  # set in wrapper
         self.repeat = repeat
         self.sp = {**kwargs}
         super().__init__(root_path, **kwargs)
@@ -275,8 +275,12 @@ class HRLRReal(RealDataset):
             lr_val = add_noise(lr_val, self.sp)
             hr_val = add_noise(hr_val, self.sp)
 
-        self.data["lr_grid"] = grid(lr_x, lr_y, lr_val, ls=lls)
-        self.data["hr_grid"] = grid(hr_x, hr_y, hr_val, ls=hls)
+        self.data["lr_grid"] = grid(
+            lr_x, lr_y, lr_val, ls=lls, inp_size=self.inp_size, scale=1
+        )
+        self.data["hr_grid"] = grid(
+            hr_x, hr_y, hr_val, ls=hls, inp_size=self.inp_size, scale=self.scale
+        )
 
         self.data["lr_grid"] = self.norm(self.data["lr_grid"])
         self.data["hr_grid"] = self.norm(self.data["hr_grid"])

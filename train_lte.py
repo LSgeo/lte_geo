@@ -107,7 +107,7 @@ def prepare_training(train_loader, val_loader, preview_loader):
             eval_type=config.get("eval_type"),
             eval_bsize=config.get("eval_bsize"),
             c_exp=c_exp,
-            shave=6,
+            shave=config.get("shave"),
         )
         c_exp.log_metric("L1 loss Val", val_l1, step=0)
         c_exp.log_metric("PSNR Val", val_res, step=0)
@@ -154,13 +154,13 @@ def plt_comet(ims: list, names: list, ax_args: dict, c_exp: Experiment):
 
 def log_images(loader, model, c_exp: Experiment):
     model.eval()
-    scales = [5]
+    scales = [8]
     scales.extend(config["val_dataset"]["wrapper"]["args"]["scales"])
 
     for si in tqdm(range(len(loader.dataset))):
-        # NOTE we are not using the dataloader! The scale wouldn't change...
+        # NOTE we are not using the dataloader!
 
-        for scale in scales:
+        for scale in set(scales):
             n = f"sample_{config['plot_samples'][si]:03d}"
             loader.dataset.dataset.override_scale = scale
             sample = loader.dataset[si]
@@ -173,8 +173,9 @@ def log_images(loader, model, c_exp: Experiment):
             sample = {"inp": inp, "coord": coord, "cell": cell, "gt": sample["gt"]}
             pred, sample = reshape(sample, 0, 0, coord, pred)
 
-            ax_args = {}
-            # dict(vmin=sample["gt"].min().item(), vmax=sample["gt"].max().item())
+            ax_args = (
+                {}
+            )  # dict(vmin=sample["gt"].min().item(), vmax=sample["gt"].max().item())
             ims = [inp, pred, sample["gt"]]
             names = [
                 n + "_lr",
@@ -223,9 +224,13 @@ def train_with_fake_epochs(
         # writer.add_scalars('loss', {'train': train_loss_itm}, epoch)
 
         writer.add_scalar("lr", optimizer.param_groups[0]["lr"], curr_epoch)
-        if config.get("scheduler") in ["multi_step_lr", "one_cycle_lr"]:
+        if "multi_step_lr" in config.get("scheduler") or "one_cycle_lr" in config.get(
+            "scheduler"
+        ):
             c_exp.log_metric("LR", lr_scheduler.get_last_lr()[0], epoch=curr_epoch)
-            lr_scheduler.step()
+            # lr_scheduler.step()
+        else:
+            raise NotImplementedError("Misconfigured Scheduler")
 
         if ngpus > 1:
             model_ = model.module
@@ -259,13 +264,13 @@ def train_with_fake_epochs(
             else:
                 model_ = model
 
-            val_l1, val_res, ssim_res = eval_psnr(
+            val_l1, val_res, extra_res = eval_psnr(
                 val_loader,
                 model_,
                 eval_type=config.get("eval_type"),
                 eval_bsize=config.get("eval_bsize"),
                 c_exp=c_exp,
-                shave=6,
+                shave=config.get("shave"),
             )
 
             log_images(preview_loader, model_, c_exp)
@@ -273,6 +278,10 @@ def train_with_fake_epochs(
             log_info.append(f"val: psnr={val_res:.4f}")
             c_exp.log_metric("L1 loss Val", val_l1, epoch=curr_epoch)
             c_exp.log_metric("PSNR Val", val_res, epoch=curr_epoch)
+
+            for res, val in extra_res.items():
+                c_exp.log_metric(f"{res.upper()} Val", val, epoch=curr_epoch)
+
             # c_exp.log_metric("SSIM Val", ssim_res)
             # writer.add_scalars('psnr', {'val': val_res}, curr_epoch)
             if val_res > max_val_v:
@@ -299,12 +308,12 @@ def train_with_fake_epochs(
     train_loss = utils.Averager()
     metric_fn = utils.calc_psnr
     l1_loss_fn = nn.L1Loss()
-    if True:  # "fsim" in config["loss_fn"]:
-        fsim_loss_fn = (
-            piq.fsim
-        )  # FSIM_Loss(data_range=config["rgb_range"], chromatic=False)
-    if True:  # "ssim" in config["loss_fn"]:
-        ssim_loss_fn = piq.ssim  # SSIM_Loss(data_range=config["rgb_range"])
+    # if True:  # "fsim" in config["loss_fn"]:
+    #     fsim_loss_fn = (
+    #         piq.fsim
+    #     )  # FSIM_Loss(data_range=config["rgb_range"], chromatic=False)
+    # if True:  # "ssim" in config["loss_fn"]:
+    #     ssim_loss_fn = piq.ssim  # SSIM_Loss(data_range=config["rgb_range"])
     # elif "haarpsi" in config["loss_fn"]:
     #     iqa_loss_fn = piq.HaarPSILoss(
     #         data_range=config["rgb_range"],
@@ -329,29 +338,34 @@ def train_with_fake_epochs(
             batch[k] = v.to("cuda", non_blocking=True)
 
         with autocast(enabled=config.get("use_amp_autocast", False)):
+            # OK so. coord and gt are the coord/val lists for HR.
+            # Cell is something to do with Fourier/Phase info
             pred = model(batch["inp"], batch["coord"], batch["cell"])
+            l1_loss = l1_loss_fn(pred, batch["gt"])
 
-            # Reshape so we can crop out the edges
-            pred, batch = reshape(batch, 0, 0, batch["coord"], pred)
-            shave = config.get("shave")
-            shave = int((shave / 100) * batch["gt"].shape[-1])
-            pred = pred[..., shave:-shave, shave:-shave]
-            gt = batch["gt"][..., shave:-shave, shave:-shave]
-            l1_loss = l1_loss_fn(pred, gt)
-            psnr = metric_fn(
-                pred,
-                gt,
-                rgb_range=config.get("rgb_range"),
-                shave=config.get("shave"),
-            )
-            # if pred.min() < -0 or pred.max() > 1:
-            #     log(f"Value of {pred.min()=} {pred.max()=} out of range")
-            pred.clamp_(0.0, 1.0)
-            gt.clamp_(0.0, 1.0)
-            fsim_loss = fsim_loss_fn(pred, gt, chromatic=False).item()
-            ssim_loss = ssim_loss_fn(pred, gt).item()
-            c_exp.log_metric("FSIM Train", fsim_loss, step=iteration)
-            c_exp.log_metric("SSIM Train", ssim_loss, step=iteration)
+            # Reshape is useless when using random sample_q
+            # we don't know what samples are where!
+
+            if False:
+                pred, batch = reshape(batch, 0, 0, batch["coord"], pred)
+                shave = config.get("shave")
+                shave = int((shave / 100) * batch["gt"].shape[-1])
+                pred = pred[..., shave:-shave, shave:-shave]
+                gt = batch["gt"][..., shave:-shave, shave:-shave]
+                pred.clamp_(0.0, 1.0)
+                gt.clamp_(0.0, 1.0)
+                psnr = metric_fn(
+                    pred,
+                    gt,
+                    rgb_range=config.get("rgb_range"),
+                    shave=config.get("shave"),
+                )
+                # if pred.min() < -0 or pred.max() > 1:
+                #     log(f"Value of {pred.min()=} {pred.max()=} out of range")
+                fsim_loss = fsim_loss_fn(pred, gt, chromatic=False).item()
+                ssim_loss = ssim_loss_fn(pred, gt).item()
+                c_exp.log_metric("FSIM Train", fsim_loss, step=iteration)
+                c_exp.log_metric("SSIM Train", ssim_loss, step=iteration)
             # iqa_loss = iqa_loss_fn(pred, gt)
             # loss = iqa_loss
             # iqa_loss_item = iqa_loss.item()
@@ -362,15 +376,16 @@ def train_with_fake_epochs(
         scaler.step(optimizer)  # .step()
         scaler.update()
         optimizer.zero_grad(set_to_none=True)
+        lr_scheduler.step()  # For OneCycleLR
 
         l1_loss_item = l1_loss.item()
-        psnr_item = psnr.item()
+        # psnr_item = psnr.item()
         train_loss.add(l1_loss_item)  # loss.item())
 
         writer.add_scalars("L1 loss Train", {"train": l1_loss_item}, iteration)
-        writer.add_scalars("PSNR", {"train": psnr_item}, iteration)
+        # writer.add_scalars("PSNR", {"train": psnr_item}, iteration)
         c_exp.log_metric("L1 loss Train", l1_loss_item, step=iteration)
-        c_exp.log_metric("PSNR Train", psnr_item, step=iteration)
+        # c_exp.log_metric("PSNR Train", psnr_item, step=iteration)
         # if (
         #     "fsim" in config["loss_fn"]
         #     or "haarpsi" in config["loss_fn"]
@@ -498,8 +513,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config",
-        # default="ch2/ltegeo/configs/train_swinir-lte_geo_synthetic.yaml"
-        default="ch2/ltegeo/configs/train_swinir-lte_geo_real.yaml",
+        default="ch2/ltegeo/configs/train_swinir-lte_geo_synthetic.yaml"
+        # default="ch2/ltegeo/configs/train_swinir-lte_geo_real.yaml",
     )
     parser.add_argument("--name", default=None)
     parser.add_argument("--tag", default=None)
