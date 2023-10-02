@@ -19,7 +19,10 @@ def subsample(raster, ls, sp):
     # Noddyverse cell size is 20 m
     inp_cs = sp["input_cell_size"]
     ss = int(sp["sample_spacing"] / inp_cs)  # Sample every n points N-S along line
-    ls = int(ls / inp_cs)
+    if int(ls / inp_cs) != ls / inp_cs:
+        raise ValueError("don't support non-integer intervals")
+
+    ls = int(ls / inp_cs)  # ls is now in array indices, like ss
 
     x, y = np.meshgrid(
         np.arange(raster.shape[-1]),
@@ -115,7 +118,7 @@ class HRLRNoddyverse(NoddyDataset):
         self,
         root_path=None,
         inp_size=48,
-        repeat=1,
+        repeat=None,
         **kwargs,
     ):
         kwargs["model_dir"] = root_path
@@ -235,7 +238,6 @@ class RealDataset(Dataset):
             self.unorm = Norm(out_vals=(0, 1)).inverse_mmc
 
         self.root_path = Path(root_path)
-        self.repeat = kwargs.get("repeat", 1)
         self.gt_patches = np.load(self.root_path, mmap_mode="r")
         self.gt_patch_size = kwargs.get("gt_patch_size")
 
@@ -245,7 +247,7 @@ class HRLRReal(RealDataset):
     def __init__(
         self,
         root_path=None,
-        repeat=1,
+        repeat=None,
         **kwargs,
     ):
         kwargs["model_dir"] = root_path
@@ -334,6 +336,8 @@ class RealWrapper(Dataset):
         # data["gt_grid"] = torch.from_numpy(data["gt_grid"].copy()).to(torch.float32)
         data["hr_grid"] = torch.from_numpy(data["hr_grid"].copy()).to(torch.float32)
         data["lr_grid"] = torch.from_numpy(data["lr_grid"].copy()).to(torch.float32)
+
+        # import matplotlib.pyplot as plt;plt.subplot(1,2,1);plt.suptitle(self.dataset.scale);plt.imshow(data["lr_grid"].squeeze());plt.subplot(1,2,2);plt.imshow(data["hr_grid"].squeeze())
 
         if "rdn" in self.mode:
             return {"hr": data["hr_grid"], "lr": data["lr_grid"], "gt": data["gt_grid"]}
