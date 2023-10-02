@@ -1,13 +1,13 @@
 use_comet: True
 use_amp_scaler: False  # Currently causes NaN
 use_amp_autocast: False  # Seems to make results bad lol
-num_workers: 4 # ~6+ on 10900KF / 3090
-eval_type: noddyverse-5
+num_workers: 7 # ~6+ on 10900KF / 3090
+eval_type: noddyverse-4
 plot_samples: [-8_001, -8000, -7997, -7988, -7979, -7971, -7969]
 rgb_range: 1  # noddyverse min max clip +-5000
 shave: 15 # pct from edge for artefacts
-model_dir: D:/luke/phd/ch2/ltegeo/save/_train_swinir-lte_geo/
-resume:  # major_fish_9316 # disappointed_neutron_9322 # colossal_south_9912
+model_dir: D:/luke/phd/ch2/ltegeo/save/_train_swinir-lte_geo_synthetic/
+resume: # urgent_solvent  # major_fish_9316 # disappointed_neutron_9322 # colossal_south_9912
 only_resume_weights: False
 
 # train_dataset:
@@ -74,9 +74,9 @@ only_resume_weights: False
 train_dataset:
   dataset:
     name: real_dataset
-    args:
+    args:  # kwargs to Dataset
       root_path: 'C:/Users/Public/scratch/sub100m_patch_stack_train.npy'
-      repeat: 1 # *= number of augs in wrapper 
+      repeat: 100 # *= number of augs in wrapper 
       gt_patch_size: 200
       input_cell_size: 20 # m
       lr_line_spacing: 400 # m  # 20 * 20 m == 400 m
@@ -85,22 +85,21 @@ train_dataset:
       norm: [-10000, 10000]
   wrapper:
     name: real_wrapper
-    args:
+    args:  # kwargs to Wrapper
       augmentations:
         sample: True  # Rotation of grid prior sampling
         flip: True
         rotate: False  # Don't use - changes direction of low resolution
       inp_size: 48
       sample_q: 2304
-      scales: [2, 4, 5] 
-  batch_size: 16
+      scales: [4] 
+  batch_size: 8
 
 val_dataset:
   dataset:
     name: real_dataset
     args:
       root_path: "C:/Users/Public/scratch/WA_MAG_20m_MGA2020_sub100m_val_2_offset_0.npy"
-      # root_path: "C:/Users/Public/scratch/sub80m_patch_stack_val_NSW.npy"
       repeat: 1
       gt_patch_size: 200
       input_cell_size: 20
@@ -111,15 +110,14 @@ val_dataset:
   wrapper:
     name: real_wrapper
     args:
-      crop: False 
       inp_size: 48
       sample_q: 
-      scales: [2, 4, 5]
+      scales: [4]
   batch_size: 8
 loss_fn: l1
 
 model:
-  name: liif
+  name: lte
   args:
     encoder_spec:
       name: swinir
@@ -131,13 +129,13 @@ model:
       name: mlp
       args:
         out_dim: 1
-        hidden_list: [256, 256, 256, 256]
-    # hidden_dim: 256
+        hidden_list: [256, 256, 256]
+    hidden_dim: 256
 
 optimizer:
   name: adam
   args:
-    lr: 3.e-4
+    lr: 1.e-4
 
 epoch_max: 10
 epoch_val: 1
@@ -147,4 +145,4 @@ scheduler:
   #   milestones: [5,6,7,8,9]
   #   gamma: 0.5
   one_cycle_lr:
-    max_lr: 3.e-4
+    max_lr: 1.e-4

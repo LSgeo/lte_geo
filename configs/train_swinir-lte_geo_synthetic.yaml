@@ -2,7 +2,7 @@ use_comet: True
 use_amp_scaler: False  # Currently causes NaN
 use_amp_autocast: False  # Seems to make results bad lol
 num_workers: 10 # ~6+ on 10900KF / 3090
-eval_type: noddyverse-5
+eval_type: noddyverse-4
 plot_samples: [209, 221, 232, 237, 244, 248, 256, 253, 253, 254]
 rgb_range: 1  # noddyverse min max clip +-5000
 shave: 15
@@ -40,7 +40,7 @@ train_dataset:
       inp_size: 48 # Currently hardcoded at 48 due to bug
       sample_q: 2304 # (inp_size * min(scale))**2
       scales: [4] # [2, 4, 5]  # only support 2, 4, 10.
-  batch_size: 16
+  batch_size: 8
 
 val_dataset:
   dataset:
@@ -84,12 +84,12 @@ model:
       args:
         out_dim: 1
         hidden_list: [256, 256, 256]
-    # hidden_dim: 256
+    hidden_dim: 256
 
 optimizer:
   name: adam
   args:
-    lr: 3.e-4
+    lr: 1.e-4
 
 epoch_max: 10
 epoch_val: 1
@@ -99,4 +99,4 @@ scheduler:
   #   milestones: [5,6,7,8,9]
   #   gamma: 0.5
   one_cycle_lr:
-    max_lr: 3.e-4
+    max_lr: 1.e-4
