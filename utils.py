@@ -73,11 +73,9 @@ def ensure_path(path, remove=True):
 
 
 def set_save_path(save_path, remove=True):
-    ensure_path(save_path, remove=remove)
+    # ensure_path(save_path, remove=remove)
     set_log_path(save_path)
-    writer = SummaryWriter(
-        os.path.join(save_path, f'tensorboard/{datetime.now().strftime("%y%m%d-%H%M")}')
-    )
+    writer = SummaryWriter(os.path.join(save_path, "tensorboard"))
     return log, writer
 
 
@@ -126,7 +124,8 @@ def to_pixel_samples(img):
     return coord, rgb
 
 
-def calc_psnr(sr, hr, dataset=None, scale=1, rgb_range=1):
+def calc_psnr(sr, hr, dataset=None, scale=1, rgb_range=1, shave=None):
+    return 20 * torch.log10(rgb_range / torch.sqrt(torch.mean((sr - hr) ** 2)))
     diff = (sr - hr) / rgb_range
     if dataset is not None:
         if dataset == "benchmark":
@@ -138,7 +137,9 @@ def calc_psnr(sr, hr, dataset=None, scale=1, rgb_range=1):
         elif dataset == "div2k":
             shave = scale + 6
         elif dataset == "noddyverse":
-            shave = scale + 6  # TODO figure out
+            if not shave:
+                shave = scale
+                # TODO figure out what shave is for / what is shaved
         else:
             raise NotImplementedError
         valid = diff[..., shave:-shave, shave:-shave]

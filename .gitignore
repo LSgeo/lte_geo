@@ -1,4 +1,6 @@
 inference/
+*.tif
+.*/
 
 .ipynb_checkpoints/
 __pycache__/

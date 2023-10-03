@@ -11,7 +11,7 @@ import numpy as np
 
 @register("lte")
 class LTE(nn.Module):
-    def __init__(self, encoder_spec, imnet_spec=None, hidden_dim=256):
+    def __init__(self, encoder_spec, imnet_spec=None, hidden_dim=256, device="cuda"):
         super().__init__()
         self.encoder = models.make(encoder_spec)
         self.coef = nn.Conv2d(self.encoder.out_dim, hidden_dim, 3, padding=1)
@@ -19,12 +19,13 @@ class LTE(nn.Module):
         self.phase = nn.Linear(2, hidden_dim // 2, bias=False)
 
         self.imnet = models.make(imnet_spec, args={"in_dim": hidden_dim})
+        self.device = device
 
     def gen_feat(self, inp):
         self.inp = inp
         self.feat_coord = (
             make_coord(inp.shape[-2:], flatten=False)
-            .cuda()
+            .to(self.device)
             .permute(2, 0, 1)
             .unsqueeze(0)
             .expand(inp.shape[0], 2, *inp.shape[-2:])
@@ -115,6 +116,8 @@ class LTE(nn.Module):
         ret = 0
         for pred, area in zip(preds, areas):
             ret = ret + pred * (area / tot_area).unsqueeze(-1)
+        
+        ### LONG RANGE SKIP CONNECTION ###
         ret += F.grid_sample(
             self.inp,
             coord.flip(-1).unsqueeze(1),
@@ -122,8 +125,14 @@ class LTE(nn.Module):
             padding_mode="border",
             align_corners=False,
         )[:, :, 0, :].permute(0, 2, 1)
+
         return ret
 
     def forward(self, inp, coord, cell):
+        # import matplotlib.pyplot as plt
+        # fig, axs = plt.subplots(len(inp), 1, figsize=(5, 25))
+        # for i, ax in enumerate(axs):
+        #     ax.imshow(inp[i, :, :].squeeze().cpu())
+
         self.gen_feat(inp)
         return self.query_rgb(coord, cell)

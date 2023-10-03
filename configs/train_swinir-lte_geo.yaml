@@ -1,45 +1,113 @@
-dataset_grid_param:
-  load_magnetics: True
-  load_gravity: False
-  load_geology: False
+use_comet: True
+use_amp_scaler: False  # Currently causes NaN
+use_amp_autocast: False  # Seems to make results bad lol
+num_workers: 10 # ~6+ on 10900KF / 3090
+eval_type: noddyverse-4
+plot_samples: [-8_001,-7969]
+rgb_range: 1  # noddyverse min max clip +-5000
+shave: 6
+resume: # D:\luke\lte_geo\save\_train_swinir-lte_geo\221113-1221_average_aerator_7080\average_aerator_7080_epoch-last.pth
+only_resume_weights: False
+
+# train_dataset:
+#   dataset:
+#     name: noddyverse_dataset
+#     args:
+#       repeat: 1  # number of times to iterate entire dataset - i.e. epochs (but of the below slice)
+#       use_dset_slice: [0, 960_000]  # restrict dataset to [n:m]  # ~ 1 hour / 100k samples
+#       root_path: "C:/Users/Public/scratch/Noddy_1M" #C:/Users/Public/scratch/noddyverse/train
+#       noddylist: "C:/Users/Public/scratch/Noddy_1M/models.csv"
+#       blocklist: "C:/Users/Public/scratch/Noddy_10k/models_10k.csv"  # Don't allow use of models in the 10k test set.
+#       events:
+#       hr_line_spacing: 4  # array coords. 1 == 20 m Noddyverse
+#       sample_spacing: 1
+#       heading: NS
+#       norm: [-10000, 10000]
+#       load_magnetics: True
+#       load_gravity: False
+#   wrapper:
+#     name: noddyverse_wrapper
+#     args:
+#       crop: True  # To reduce RAM in batch training? # False if max scale > 4 
+#       inp_size: 30
+#       sample_q: 900
+#       scale_min: 6
+#       scale_max: 6
+#       # inp_size: 45  # LR input size (45) for HR line spacing 4. For HRLS 1, 4*45
+#       # sample_q: 1296  #2025 # inp_size ** 2 (45*45)
+#       # scale_min: 5
+#       # scale_max: 5  # max 4 with no other changes. up to 10, hardcoded to exclude 7
+#       # cs_fac: 4  # Hardcoded to 4. If you set to 5, need to hardcode exclude scale 8.
+#   batch_size: 8 #1 #4
+# 
+# val_dataset:
+#   dataset:
+#     name: noddyverse_dataset
+#     args:
+#       repeat: 1
+#       use_dset_slice: [-8001, -1]  # [n:m] slice notation, can be negative
+#       root_path: "C:/Users/Public/scratch/Noddy_1M"
+#       noddylist: "C:/Users/Public/scratch/Noddy_1M/models.csv"
+#       blocklist: "C:/Users/Public/scratch/Noddy_10k/models_10k.csv" 
+#       hr_line_spacing: 4
+#       sample_spacing: 1
+#       heading: NS
+#       norm: [-10000, 10000]
+#       load_magnetics: True
+#       load_gravity: False
+#       events:
+#   wrapper:
+#     name: noddyverse_wrapper
+#     args:
+#       crop: True 
+#       inp_size: 30
+#       sample_q: 900
+#       scale_min: 6
+#       scale_max: 6
+#   batch_size: 8
 
 train_dataset:
   dataset:
-    name: noddyverse_dataset
+    name: real_dataset
     args:
-      root_path: D:/luke/Noddy_data/noddyverse_train_data
-      repeat: 5
-      limit_length: 2500
-      hr_line_spacing: 1
-      sample_spacing: 20
+      root_path: "C:/Users/Public/scratch/sub80m_patch_stack_train.npy"
+      repeat: 2
+      gt_patch_size: 180
+      hr_line_spacing: 4
+      sample_spacing: 1
       heading: NS
+      norm: [-10000, 10000]
   wrapper:
-    name: noddyverse_wrapper
+    name: real_wrapper
     args:
-      inp_size: 48 # LR input size
-      scale_max: 4 #up to 10, hardcoded to exclude 7
-      # cs_fac: 4 # Hardcoded to 4. If you set to 5, exclude scale 8.
+      inp_size: 45
+      sample_q: 2025
+      scale_min: 4
+      scale_max: 4
   batch_size: 8
 
 val_dataset:
   dataset:
-    name: noddyverse_dataset
+    name: real_dataset
     args:
+      root_path: "C:/Users/Public/scratch/sub80m_patch_stack_test.npy" 
+      # root_path: "C:/Users/Public/scratch/sub80m_patch_stack_val_NSW.npy"
       repeat: 1
-      root_path: D:/luke/Noddy_data/noddyverse_val_data
+      gt_patch_size: 180
       hr_line_spacing: 4
-      sample_spacing: 20
+      sample_spacing: 1
       heading: NS
+      norm: [-10000, 10000]
   wrapper:
-    name: noddyverse_wrapper
+    name: real_wrapper
     args:
-      inp_size: 48
+      inp_size: 45
+      sample_q: 2025
+      scale_min: 4
       scale_max: 4
   batch_size: 8
 
-data_norm:
-  inp: {sub: [0], div: [1]}
-  gt: {sub: [0], div: [1]}
+loss_fn: l1
 
 model:
   name: lte
@@ -47,7 +115,8 @@ model:
     encoder_spec:
       name: swinir
       args:
-        no_upsampling: true
+        # upsampler: none
+        no_upsampling: True # Possibly unused in swinir
         in_chans: 1
     imnet_spec:
       name: mlp
@@ -59,17 +128,14 @@ model:
 optimizer:
   name: adam
   args:
-    lr: 2.e-4
-epoch_max: 50
-multi_step_lr:
-  milestones: [10, 20, 30, 40]
-  gamma: 0.5
+    lr: 1.e-4
 
+epoch_max: 10
 epoch_val: 1
-epoch_save: 26
-
-num_workers: 8
-rgb_range: 2 #noddyverse min max clip +-5000
-
-# resume: ./save/_train_swinir-lte/epoch-last.pth
-## train.py#49 - change resume logic
+epoch_save: 6
+scheduler:
+  multi_step_lr:
+    milestones: [5,7,9]
+    gamma: 0.5
+  # one_cycle_lr:
+  #   max_lr: 2.e-3

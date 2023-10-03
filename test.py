@@ -1,13 +1,20 @@
+if 0 and __name__ == "__main__":
+    assert False, "Use inference.py instead"
+
 import argparse
 import os
 import math
 from functools import partial
 from pathlib import Path
 
+import comet_ml
 import colorcet as cc
 import matplotlib.pyplot as plt
+import numpy as np
+import piq
 import torch
 import yaml
+from PIL import Image
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
@@ -33,106 +40,56 @@ def batched_predict(model, inp, coord, cell, bsize):
     return pred
 
 
-def save_pred(lr, sr, hr, gt_index, save_path="", suffix="", scale=None):
-    Path(save_path).mkdir(parents=True, exist_ok=True)
-    title = f"Magnetics_{suffix}_{scale}x.png"
-    norm = Norm(clip=5000)
-    lr = norm.inverse_mmc(lr.detach().cpu().squeeze().numpy())
-    sr = norm.inverse_mmc(sr.detach().cpu().squeeze().numpy())
-    hr = norm.inverse_mmc(hr.detach().cpu().squeeze().numpy())
-
-    gt_list = Path(spec["dataset"]["args"]["root_path"])
-    gt_list = [Path(str(p)[:-3]) for p in gt_list.glob("**/*.mag.gz")]
-    gt = next(parse_geophysics(gt_list[gt_index], mag=True))
-
-    # _min, _max = (norm.min,  norm.max)
-    _min, _max = (hr.min(), hr.max())
-    # _min, _max = (gt.min(), gt.max())
-
-    plt_args = dict(
-        vmin=_min,
-        vmax=_max,
-        cmap=cc.cm.CET_L8,
-        origin="lower",
-        interpolation="nearest",
-    )
-
-    fig, [axlr, axsr, axhr, axgt] = plt.subplots(1, 4, figsize=(24, 8))
-    plt.suptitle(title)
-    axlr.set_title("LR")
-    imlr = axlr.imshow(lr, **plt_args)
-    plt.colorbar(mappable=imlr, ax=axlr, location="bottom")
-    axsr.set_title("SR")
-    imsr = axsr.imshow(sr, **plt_args)
-    plt.colorbar(mappable=imsr, ax=axsr, location="bottom")
-    axhr.set_title("HR")
-    imhr = axhr.imshow(hr, **plt_args)
-    plt.colorbar(mappable=imhr, ax=axhr, location="bottom")
-    axgt.set_title("GT")
-    plt_args.pop("vmin")
-    plt_args.pop("vmax")
-    plt_args["cmap"] = cc.cm.CET_L1
-    imgt = axgt.imshow(gt, **plt_args)
-    plt.colorbar(mappable=imgt, ax=axgt, location="bottom")
-    # lr_ls = ["dataset"]["args"]["hr_line_spacing"] * scale
-    plt.savefig(Path(save_path) / title)
-    plt.close()
-
-
 def eval_psnr(
     loader,
     model,
-    data_norm=None,
+    # data_norm=None,
     eval_type=None,
     eval_bsize=None,
     window_size=0,
     scale_max=4,
     fast=False,
-    verbose=False,
+    verbose=True,
     rgb_range=1,
     model_name="",
+    c_exp: comet_ml.Experiment = None,
+    shave=None,
+    save_path="",
 ):
     model.eval()
+    scale = int(eval_type.split("-")[1])
+    metric_fn = partial(
+        utils.calc_psnr,
+        dataset="noddyverse",
+        scale=scale,
+        rgb_range=rgb_range,
+        shave=shave,
+    )
 
-    if data_norm is None:
-        data_norm = {"inp": {"sub": [0], "div": [1]}, "gt": {"sub": [0], "div": [1]}}
-    t = data_norm["inp"]
-    inp_sub = torch.FloatTensor(t["sub"]).view(1, -1, 1, 1).cuda()
-    inp_div = torch.FloatTensor(t["div"]).view(1, -1, 1, 1).cuda()
-    t = data_norm["gt"]
-    gt_sub = torch.FloatTensor(t["sub"]).view(1, 1, -1).cuda()
-    gt_div = torch.FloatTensor(t["div"]).view(1, 1, -1).cuda()
+    loader.dataset.scale = scale
+    loader.dataset.dataset.scale = scale
 
-    if eval_type is None:
-        metric_fn = utils.calc_psnr
-    elif eval_type.startswith("div2k"):
-        scale = int(eval_type.split("-")[1])
-        metric_fn = partial(utils.calc_psnr, dataset="div2k", scale=scale)
-    elif eval_type.startswith("benchmark"):
-        scale = int(eval_type.split("-")[1])
-        metric_fn = partial(utils.calc_psnr, dataset="benchmark", scale=scale)
-    elif eval_type.startswith("noddy"):
-        scale = int(eval_type.split("-")[1])
-        metric_fn = partial(
-            utils.calc_psnr,
-            dataset="noddyverse",
-            scale=scale,
-            rgb_range=rgb_range,
-        )
-        loader.dataset.dataset.scale = scale  # Dataloader>Subset>Wrapper>NoddyDataset
-    else:
-        raise NotImplementedError
+    if __name__ == "__main__":
+        loader.dataset.scale_min = scale
+        loader.dataset.scale_max = scale
 
+    l1_fn = torch.nn.L1Loss()
+    l1_res = utils.Averager()
     val_res = utils.Averager()
+    fsim_res = utils.Averager()
 
-    pbar = tqdm(loader, leave=False, desc="test")
+    pbar = tqdm(loader, leave=False, desc="Eval", dynamic_ncols=True)
     for i, batch in enumerate(pbar):
+        loader.dataset.scale = torch.randint(
+            low=loader.dataset.scale_min,
+            high=loader.dataset.scale_max + 1,
+            size=(1,),
+        )
+
         for k, v in batch.items():
             batch[k] = v.cuda()
 
-        # pbar.write(f"Running scale: {loader.dataset.dataset.scale}")
-
-        inp = (batch["inp"] - inp_sub) / inp_div
+        inp = batch["inp"]
         # SwinIR Evaluation - reflection padding
         if window_size != 0:
             _, _, h_old, w_old = inp.size()
@@ -167,54 +124,60 @@ def eval_psnr(
                     model, inp, coord, cell * max(scale / scale_max, 1), eval_bsize
                 )  # cell clip for extrapolation
 
-        pred = pred * gt_div + gt_sub
         # pred.clamp_(0, 1)
-
-        if eval_type is not None and fast == False:  # reshape for shaving-eval
+        if eval_type is not None and not fast:  # reshape for shaving-eval
             pred, batch = reshape(batch, h_pad, w_pad, coord, pred)
+            fsim = piq.fsim(pred.clamp(0, 1), batch["gt"], chromatic=False)
+            fsim_res.add(fsim.item(), inp.shape[0])
 
-            save_pred(
-                lr=batch["inp"],
-                sr=pred,
-                hr=batch["gt"],
-                gt_index=config["visually_nice_test_samples"][i],
-                save_path=f"inference/{model_name}",
-                suffix=config["visually_nice_test_samples"][i],
-                scale=scale,
-            )
+            # if __name__ == "__main__":
+            #     save_pred(
+            #         lr=batch["inp"].detach().cpu().squeeze().numpy(),
+            #         hr=batch["gt"].detach().cpu().squeeze().numpy(),
+            #         sr=pred.detach().cpu().squeeze().numpy(),
+            #         gt_index=config["plot_samples"][i],
+            #         save_path=save_path,
+            #         suffix=config["plot_samples"][i],
+            #         scale=scale,
+            #         c_exp=c_exp,
+            #     )
 
+        l1_metric = l1_fn(pred, batch["gt"])
+        l1_res.add(l1_metric.item(), inp.shape[0])
         res = metric_fn(pred, batch["gt"])
         val_res.add(res.item(), inp.shape[0])
 
         if verbose:
-            pbar.set_description("PSNR test {:.4f}".format(val_res.item()))
+            pbar.set_description("PSNR eval {:.4f}".format(val_res.item()))
 
-    return val_res.item()
+    return l1_res.item(), val_res.item(), fsim_res.item()
 
 
 def reshape(batch, h_pad, w_pad, coord, pred):
-            # gt reshape
-            ih, iw = batch["inp"].shape[-2:]
-            s = math.sqrt(batch["coord"].shape[1] / (ih * iw))
-            shape = [batch["inp"].shape[0], round(ih * s), round(iw * s), 1]
-            batch["gt"] = batch["gt"].view(*shape).permute(0, 3, 1, 2).contiguous()
+    # gt reshape
+    b, c, ih, iw = batch["inp"].shape
+    s = math.sqrt(batch["coord"].shape[1] / (ih * iw))
+    shape = [b, round(ih * s), round(iw * s), c]
+    batch["gt"] = batch["gt"].view(*shape).permute(0, 3, 1, 2).contiguous()
 
-            # prediction reshape
-            ih += h_pad
-            iw += w_pad
-            s = math.sqrt(coord.shape[1] / (ih * iw))
-            shape = [batch["inp"].shape[0], round(ih * s), round(iw * s), 1]
-            pred = pred.view(*shape).permute(0, 3, 1, 2).contiguous()
-            pred = pred[..., : batch["gt"].shape[-2], : batch["gt"].shape[-1]]
+    # prediction reshape
+    ih += h_pad
+    iw += w_pad
+    s = math.sqrt(coord.shape[1] / (ih * iw))
+    shape = [b, round(ih * s), round(iw * s), c]
+    pred = pred.view(*shape).permute(0, 3, 1, 2).contiguous()
+    pred = pred[..., : batch["gt"].shape[-2], : batch["gt"].shape[-1]]
 
     return pred, batch
 
 
-def single_sample_scale_range(loader, model, scales=[1, 2, 3, 4], model_name=""):
+def plot_scale_range(loader, model, scales=[1, 2, 3, 4], model_name=""):
+    raise NotImplementedError
     model.eval()
     pbar = tqdm(scales, leave=False, desc="scale_vis")
 
     for scale in pbar:
+        loader.dataset.scale = scale
         loader.dataset.dataset.scale = scale
 
         for i, batch in enumerate(loader):
@@ -232,21 +195,23 @@ def single_sample_scale_range(loader, model, scales=[1, 2, 3, 4], model_name="")
 
             pred, batch = reshape(batch, h_pad, w_pad, coord, pred)
 
-            save_pred(
-                lr=batch["inp"],
-                sr=pred,
-                hr=batch["gt"],
-                gt_index=config["visually_nice_test_samples"][i],
-                save_path=f"inference/scale_vis/{model_name}",
-                suffix=config["visually_nice_test_samples"][i],
-                scale=scale,
-            )
+            # save_pred(
+            #     lr=batch["inp"],
+            #     sr=pred,
+            #     hr=batch["gt"],
+            #     gt_index=config["visually_nice_test_samples"][i],
+            #     save_path=f"inference/scale_vis/{model_name}",
+            #     suffix=config["visually_nice_test_samples"][i],
+            #     scale=scale,
+            # )
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="configs/test_swinir-lte_geo.yaml")
-    parser.add_argument("--model", default="save/_train_swinir-lte_geo/epoch-best.pth")
+    parser.add_argument(
+        "--model", default="D:/luke/lte_geo/save/_train_swinir-lte_geo"
+    )  # Specify dir containing model .pths
     parser.add_argument("--window", default="0")
     # parser.add_argument("--scale_max", default="4")
     parser.add_argument("--fast", default=False)
@@ -257,15 +222,18 @@ if __name__ == "__main__":
 
     with open(args.config, "r") as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
-    args.scale_max = config["test_dataset"]["wrapper"]["args"]["scale_max"]
+
+    # process_custom_data()
+    # exit()
 
     spec = config["test_dataset"]
     dataset = datasets.make(spec["dataset"])
     dataset = datasets.make(spec["wrapper"], args={"dataset": dataset})
-    dataset.is_val = True
+    # print(len(dataset))
+    dataset.crop = spec["wrapper"]["args"]["crop"]
 
-    if True:  # config["show_scale_samples_not_eval"]:
-        dataset = Subset(dataset, config["visually_nice_test_samples"])
+    if config["limit_to_plots"]:
+        dataset = Subset(dataset, config["plot_samples"])
 
     loader = DataLoader(
         dataset,
@@ -275,28 +243,42 @@ if __name__ == "__main__":
         pin_memory=True,
     )
 
-    model_spec = torch.load(args.model)["model"]
+    model_dir = Path(args.model)
+    model_name = config["model_name"]
+    model_paths = list(model_dir.glob(f"**/*{model_name}*best.pth"))
+    if len(model_paths) != 1:
+        raise FileNotFoundError(
+            f"No unique model found in {model_dir} for *{model_name}*best.pth. Refine search."
+        )
+    model_path = model_paths[0]
+    # last_model = Path("D:/luke/lte_geo/save/_train_swinir-lte_geo/tensorboard")
+    # last_model = sorted(list(last_model.iterdir()))[-1].stem
+
+    model_spec = torch.load(model_path)["model"]
     model = models.make(model_spec, load_sd=True).cuda()
 
-    last_model = Path("D:/luke/lte_geo/save/_train_swinir-lte_geo/tensorboard")
-    last_model = sorted(list(last_model.iterdir()))[-1].stem
+    save_path = Path(f"inference/{model_name}")
 
-    if config["show_scale_samples_not_eval"]:
-        single_sample_scale_range(
-            loader, model, scales=[1, 2, 3, 4], model_name=last_model
-        )
+    if config["scale_range"]:
+        plot_scale_range(loader, model, scales=[1, 2, 3, 4], model_name=model_name)
     else:
-    res = eval_psnr(
-        loader,
-        model,
-        data_norm=config.get("data_norm"),
-        eval_type=config.get("eval_type"),
-        eval_bsize=config.get("eval_bsize"),
-        window_size=int(args.window),
-        scale_max=int(args.scale_max),
-        fast=args.fast,
-        verbose=True,
-        rgb_range=config.get("rgb_range"),
-        model_name=last_model,
-    )
-    print("result: {:.4f}".format(res))
+        res = eval_psnr(
+            loader,
+            model,
+            data_norm=config.get("data_norm"),
+            eval_type=config.get("eval_type"),
+            eval_bsize=config.get("eval_bsize"),
+            window_size=int(args.window),
+            scale_max=int(args.scale_max),
+            fast=args.fast,
+            verbose=True,
+            rgb_range=config.get("rgb_range"),
+            model_name=model_name,
+            shave=6,
+            save_path=save_path,
+        )
+        print(
+            f"Model: {model_path.absolute()}\n"
+            f"L1: {res[0]:.4f} PSNR: {res[1]:.4f}\n"
+            f"Saved to: {save_path}"
+        )
